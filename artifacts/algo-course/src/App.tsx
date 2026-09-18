@@ -4,7 +4,7 @@ import { Link, Route, Router as WouterRouter, Switch, useLocation, useParams } f
 import {
   ArrowLeft, ArrowRight, BarChart3, Bookmark, BookOpen, BrainCircuit, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Code2, Compass, Flame, GitBranch,
-  AlertTriangle, ExternalLink, Grid2X2, Layers3, Lightbulb, ListFilter, LogIn, LogOut, Menu, Network, Play, RefreshCw, RotateCcw, Search,
+  AlertTriangle, ExternalLink, Grid2X2, Layers3, Lightbulb, ListFilter, LogIn, LogOut, Menu, Moon, Network, Play, RefreshCw, RotateCcw, Search, Sun,
   Sparkles, Target, Timer, Trophy, X, Zap,
 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -15,6 +15,7 @@ import { useProgress, type SyncState } from '@/hooks/use-progress';
 import { authConfigured } from '@/lib/supabase';
 import type { Persisted } from '@/lib/progress';
 import type { Session } from '@supabase/supabase-js';
+import { applyTheme, storeTheme, storedTheme, systemTheme, type ThemePreference } from '@/lib/theme';
 
 const queryClient = new QueryClient();
 
@@ -88,6 +89,38 @@ function statusOf(problem: Problem, progress: Persisted): ProblemStatus {
   return progress.statuses[problem.slug] ?? problem.status;
 }
 
+/**
+ * Theme control. Starts from a stored choice, otherwise follows the system and
+ * keeps following it until the reader picks one.
+ */
+function ThemeToggle() {
+  const [theme, setTheme] = useState<ThemePreference>(() => storedTheme() ?? systemTheme());
+  const [explicit, setExplicit] = useState(() => storedTheme() !== null);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (explicit) return;
+    const query = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setTheme(query.matches ? 'dark' : 'light');
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, [explicit]);
+
+  const toggle = () => {
+    const next: ThemePreference = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    setExplicit(true);
+    storeTheme(next);
+  };
+
+  return <button className="icon-button theme-toggle" onClick={toggle} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} data-testid="button-theme-toggle">
+    {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+  </button>;
+}
+
 type AuthProps = {
   session: Session | null;
   authReady: boolean;
@@ -113,6 +146,7 @@ function Shell({ children, progress, auth }: { children: ReactNode; progress: Pe
         </nav>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="streak" data-testid="status-streak"><Flame size={14} /> {progress.streak} day streak</div>
+          <ThemeToggle />
           <Account {...auth} />
         </div>
       </header>
@@ -287,13 +321,13 @@ function Lesson({ progress, setStatus, toggleBookmark, visit }: { progress: Pers
   return <main className="lesson-shell">
     <div className="lesson-top"><Link href="/problems" className="back-link" data-testid="link-back-library"><ArrowLeft size={15} /> Back to library</Link><div className="lesson-progress"><span>Lesson {Math.min(step + 1, 4)} of 4</span><div className="progress-track"><div className="progress-fill" style={{ width: `${isCompleted ? 100 : (step / 4) * 100}%` }} /></div><button className={`icon-button ${progress.bookmarks.includes(problem.slug) ? 'bookmarked' : ''}`} onClick={() => toggleBookmark(problem.slug)} aria-label={progress.bookmarks.includes(problem.slug) ? 'Remove bookmark' : 'Bookmark lesson'} data-testid="button-bookmark-lesson"><Bookmark size={17} fill={progress.bookmarks.includes(problem.slug) ? 'currentColor' : 'none'} /></button></div></div>
     <div className="lesson-layout">
-      <aside className="lesson-side"><h4>{problem.pattern}</h4><div className="step-nav">{steps.map((item, index) => { const locked = index > 2 && !allChecksCorrect && !isDone; return <button className={`step-button ${step === index ? 'active' : ''} ${index < step || isDone ? 'done' : ''} ${locked ? 'locked' : ''}`} disabled={locked} aria-disabled={locked} title={locked ? 'Pass the checkpoint first' : undefined} aria-label={`Step ${index + 1}: ${item.title}${locked ? ' (locked)' : ''}`} onClick={() => { if (!locked) setStep(index); }} key={item.kind} data-testid={`button-step-${index + 1}`}><span className="step-number">{index < step || isDone ? <Check size={12} /> : index + 1}</span><span>{item.title}</span></button>; })}</div><div style={{ marginTop: 25, padding: 13, background: '#fff0cd', borderRadius: 12, color: '#72571e', fontSize: 11, lineHeight: 1.55 }}><Sparkles size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} /> Stay curious. The pattern is the win.</div></aside>
+      <aside className="lesson-side"><h4>{problem.pattern}</h4><div className="step-nav">{steps.map((item, index) => { const locked = index > 2 && !allChecksCorrect && !isDone; return <button className={`step-button ${step === index ? 'active' : ''} ${index < step || isDone ? 'done' : ''} ${locked ? 'locked' : ''}`} disabled={locked} aria-disabled={locked} title={locked ? 'Pass the checkpoint first' : undefined} aria-label={`Step ${index + 1}: ${item.title}${locked ? ' (locked)' : ''}`} onClick={() => { if (!locked) setStep(index); }} key={item.kind} data-testid={`button-step-${index + 1}`}><span className="step-number">{index < step || isDone ? <Check size={12} /> : index + 1}</span><span>{item.title}</span></button>; })}</div><div style={{ marginTop: 25, padding: 13, background: 'var(--gold-soft)', borderRadius: 12, color: 'var(--gold-text)', fontSize: 11, lineHeight: 1.55 }}><Sparkles size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} /> Stay curious. The pattern is the win.</div></aside>
       <section className="lesson-main">
-        <div className="lesson-header"><div className="eyebrow">{problem.number} · {problem.pattern} · {problem.difficulty.toLowerCase()}</div><h1 className="display">{problem.title}</h1><p>{problem.summary}</p></div>
+        <div className="lesson-header"><div className="eyebrow">{problem.number} · {problem.pattern} · {problem.difficulty.toLowerCase()}</div><h1 className="display">{problem.title}</h1><p>{problem.summary}</p><div className="problem-statement" data-testid="text-problem-statement"><h4>The problem</h4><p>{problem.prompt}</p></div></div>
         {isDone ? <div className="complete-card"><div className="complete-icon"><Trophy size={31} /></div><h2>Pattern added to your toolkit.</h2><p>You completed this guided lesson. The next time this shape appears, you’ll have a place to start.</p><div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}><button className="btn btn-secondary" onClick={() => { setStep(0); setCheckAnswers([]); setReviewing(true); }} data-testid="button-review-lesson"><RotateCcw size={14} /> Review lesson</button><Link href="/problems" className="btn btn-primary" data-testid="button-next-problem">Choose another <ArrowRight size={14} /></Link></div></div> : <LessonStepContent problem={problem} step={step} intuitionChecks={intuitionChecks} checkAnswers={checkAnswers} setCheckAnswer={chooseCheckAnswer} showHints={showHints} setShowHints={setShowHints} codeTab={codeTab} setCodeTab={setCodeTab} />}
          {!isDone && <div className="lesson-actions"><button className="btn btn-secondary" disabled={step === 0} style={{ opacity: step === 0 ? .45 : 1 }} onClick={() => setStep((value) => value - 1)} data-testid="button-previous-step"><ArrowLeft size={14} /> Previous</button><button className="btn btn-primary" disabled={step === 2 && !allChecksCorrect} onClick={next} data-testid="button-next-step">{step === steps.length - 1 ? 'Complete lesson' : 'Next step'} <ArrowRight size={14} /></button></div>}
       </section>
-      <aside className="lesson-right" id="lesson-hints"><div className="panel lesson-right-card"><h4>Hints, when useful</h4>{hints.map((hint, index) => <div className="hint" key={hint}><button onClick={() => setShowHints((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index])} data-testid={`button-hint-${index + 1}`}><span>Hint {index + 1}</span>{showHints.includes(index) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>{showHints.includes(index) && <p>{hint}</p>}</div>)}</div><div className="panel lesson-right-card" style={{ marginTop: 14, background: '#e8e5f5', borderColor: '#cfcae9' }}><CircleHelp size={17} color="#5b568d" /><p style={{ color: '#5b568d', fontSize: 11, lineHeight: 1.6, marginBottom: 0 }}>You can revisit any step from the rail. Understanding beats speed here.</p></div></aside>
+      <aside className="lesson-right" id="lesson-hints"><div className="panel lesson-right-card"><h4>Hints, when useful</h4>{hints.map((hint, index) => <div className="hint" key={hint}><button onClick={() => setShowHints((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index])} data-testid={`button-hint-${index + 1}`}><span>Hint {index + 1}</span>{showHints.includes(index) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>{showHints.includes(index) && <p>{hint}</p>}</div>)}</div><div className="panel lesson-right-card" style={{ marginTop: 14, background: 'var(--violet-soft)', borderColor: 'var(--violet-border)' }}><CircleHelp size={17} color="#5b568d" /><p style={{ color: 'var(--violet-text)', fontSize: 11, lineHeight: 1.6, marginBottom: 0 }}>You can revisit any step from the rail. Understanding beats speed here.</p></div></aside>
     </div>
   </main>;
 }
@@ -311,7 +345,7 @@ function LessonStepContent({ problem, step, intuitionChecks, checkAnswers, setCh
     const isCorrect = currentAnswer === currentCheck.answer;
     return <div className="panel lesson-card"><StepHeading icon={<CircleHelp />} item={item} /><div className="intuition-intro"><div><span className="eyebrow">Before you code</span><h3>Prove the idea in three moves.</h3><p>These checks test whether you can recognize, trace, and defend the pattern—not just remember a recipe.</p></div><span className="intuition-score mono">{completeCount}/{intuitionChecks.length} clear</span></div><div className="intuition-rail">{intuitionChecks.map((check, index) => <div className={`intuition-step ${checkAnswers[index] === check.answer ? 'complete' : index === currentIndex ? 'current' : ''}`} key={check.kind}><span>{checkAnswers[index] === check.answer ? <Check size={12} /> : index + 1}</span><div><strong>{check.label}</strong><small>{checkAnswers[index] === check.answer ? 'Understood' : index === currentIndex ? 'Work this one out' : 'Unlocks next'}</small></div></div>)}</div><div className="checkpoint deep-check"><span className="tag ink">{currentCheck.label}</span><h3>{currentCheck.question}</h3><p>Choose an answer. If you miss it, the explanation tells you what to look for and you can try again.</p><div className="choice-list">{currentCheck.choices.map((choice, index) => { const result = currentAnswer !== null ? (index === currentCheck.answer ? 'correct' : index === currentAnswer ? 'wrong' : '') : ''; return <button className={`choice ${currentAnswer === index ? 'selected' : ''} ${result}`} onClick={() => setCheckAnswer(currentIndex, index)} key={choice} data-testid={`button-intuition-choice-${currentIndex}-${index}`}><span className="choice-dot">{result === 'correct' ? <Check size={11} /> : result === 'wrong' ? <X size={11} /> : null}</span>{choice}</button>; })}</div>{currentAnswer !== null && <div className="checkpoint-result" style={{ color: isCorrect ? '#28673a' : '#954e40' }}>{isCorrect ? currentCheck.explanation : 'Not quite. Read the explanation, then try the check again.'}</div>}</div></div>;
   }
-  return <div className="panel lesson-card"><StepHeading icon={<Code2 />} item={item} /><div className="lesson-prose"><div className="practice-header"><div><p>{problem.prompt}</p><span className="tag aqua">Understanding gate cleared</span></div><a className="btn btn-secondary" href={`https://leetcode.com/problems/${problem.slug}/`} target="_blank" rel="noreferrer" data-testid="link-open-leetcode">Open on LeetCode <ExternalLink size={14} /></a></div><div className="code-tabs"><button className={`code-tab ${codeTab === 'starter' ? 'active' : ''}`} onClick={() => setCodeTab('starter')} data-testid="button-code-starter">Starter</button><button className={`code-tab ${codeTab === 'solution' ? 'active' : ''}`} onClick={() => setCodeTab('solution')} data-testid="button-code-solution">Reference solution</button></div><pre className="code-block"><code>{codeTab === 'starter' ? problem.starterCode : problem.solutionCode}</code></pre><div className="complexity"><span>time · {problem.complexity.time}</span><span>space · {problem.complexity.space}</span></div></div></div>;
+  return <div className="panel lesson-card"><StepHeading icon={<Code2 />} item={item} /><div className="lesson-prose"><div className="practice-header"><div><span className="tag aqua">Understanding gate cleared</span></div><a className="btn btn-secondary" href={`https://leetcode.com/problems/${problem.slug}/`} target="_blank" rel="noreferrer" data-testid="link-open-leetcode">Open on LeetCode <ExternalLink size={14} /></a></div><div className="code-tabs"><button className={`code-tab ${codeTab === 'starter' ? 'active' : ''}`} onClick={() => setCodeTab('starter')} data-testid="button-code-starter">Starter</button><button className={`code-tab ${codeTab === 'solution' ? 'active' : ''}`} onClick={() => setCodeTab('solution')} data-testid="button-code-solution">Reference solution</button></div><pre className="code-block"><code>{codeTab === 'starter' ? problem.starterCode : problem.solutionCode}</code></pre><div className="complexity"><span>time · {problem.complexity.time}</span><span>space · {problem.complexity.space}</span></div></div></div>;
 }
 
 /**
