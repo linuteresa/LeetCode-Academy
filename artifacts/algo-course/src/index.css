@@ -163,6 +163,30 @@ a { color: inherit; text-decoration: none; }
 .avatar { width: 34px; height: 34px; margin-left: 12px; display: grid; place-items: center; border-radius: 50%; background: var(--lavender); color: var(--violet-text); font-size: 12px; font-weight: 800; }
 
 /* Account / sign-in control */
+/* Learn / Practice switch */
+.mode-switch { display: inline-flex; gap: 4px; margin-top: 16px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); }
+.mode-switch a { display: inline-flex; align-items: center; gap: 6px; padding: 7px 15px; border-radius: 999px; color: var(--muted); font-size: 12.5px; font-weight: 700; }
+.mode-switch a.active { color: var(--ink); background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+/* Practice conversation */
+.interview { padding: 0; overflow: hidden; }
+.interview-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 22px 16px; border-bottom: 1px solid var(--line); }
+.interview-head h2 { margin: 5px 0 0; font-family: 'Space Grotesk'; font-size: 20px; letter-spacing: -.03em; }
+.interview-log { display: flex; flex-direction: column; gap: 15px; max-height: 460px; overflow-y: auto; padding: 22px; }
+.turn { display: grid; gap: 4px; max-width: 86%; }
+.turn-who { font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.turn p { margin: 0; padding: 12px 15px; border-radius: 13px; font-size: 13.5px; line-height: 1.65; }
+.turn-interviewer p { background: var(--surface-2); color: var(--ink); border-top-left-radius: 4px; }
+.turn-candidate { justify-self: end; text-align: right; }
+.turn-candidate p { background: var(--aqua-soft); color: var(--aqua-text); border-top-right-radius: 4px; text-align: left; }
+.interview-input { display: flex; gap: 10px; align-items: flex-end; padding: 0 22px 18px; }
+.interview-input textarea { flex: 1; resize: vertical; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font-size: 13.5px; line-height: 1.6; }
+.interview-input textarea:focus { outline: 2px solid var(--aqua); outline-offset: 1px; }
+.interview-choices { padding: 0 22px 18px; }
+.interview-done { display: flex; align-items: center; gap: 8px; margin: 0 22px 18px; padding: 12px 14px; border-radius: 11px; background: var(--green-soft); color: var(--green-text); font-size: 12.5px; }
+.interview-footer { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px 22px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.interview-note { flex: 1; min-width: 220px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+
 /* The problem statement, shown above the lesson steps so the pattern is being
    spotted in a problem the learner has actually read. */
 .problem-statement { margin-top: 18px; padding: 15px 17px; border: 1px solid var(--line); border-left: 3px solid var(--aqua); border-radius: 12px; background: var(--paper); }
