@@ -4,7 +4,7 @@
 
 :root {
   --ink: #17212b;
-  --muted: #6c7982;
+  --muted: #5c6970; /* darkened from #6c7982 to clear WCAG AA 4.5:1 on light surfaces */
   --paper: #f7f4ed;
   --card: #fffdf8;
   --line: #deded4;
@@ -58,6 +58,8 @@ a { color: inherit; text-decoration: none; }
 .avatar { width: 34px; height: 34px; margin-left: 12px; display: grid; place-items: center; border-radius: 50%; background: var(--lavender); color: #454273; font-size: 12px; font-weight: 800; }
 
 /* Account / sign-in control */
+.step-button.locked { opacity: .45; cursor: not-allowed; }
+
 .account { position: relative; margin-left: 12px; }
 .account-avatar { border: 0; padding: 0; cursor: pointer; overflow: hidden; margin-left: 0; }
 .account-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -275,7 +277,10 @@ a { color: inherit; text-decoration: none; }
 
 @media (max-width: 980px) {
   .lesson-layout { grid-template-columns: 190px minmax(0, 1fr); }
-  .lesson-right { display: none; }
+  /* Hints are the whole point of the rail, so move it below the lesson on
+     narrow screens rather than hiding it. */
+  .lesson-right { position: static; order: 3; }
+  .lesson-right-card { padding: 16px; }
 }
 @media (max-width: 760px) {
   .topbar { height: 64px; padding: 0 17px; }

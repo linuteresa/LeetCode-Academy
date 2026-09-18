@@ -161,13 +161,13 @@ const lessons: Lesson[] = [
     slug: 'add-two-numbers', estimatedMinutes: 20,
     summary: 'Add digits stored in reverse-order linked lists, carry included.', tags: ['linked list', 'math'],
     steps: sharedSteps('A dummy head gives a stable place to attach the result. Walk both lists together, treating missing nodes as zero and carrying overflow forward.', 'Each loop creates exactly one output digit. The carry is the small piece of state that connects adjacent columns.',),
-    prompt: 'Two non-empty linked lists represent two non-negative integers in reverse order. Return their sum as a linked list.', hints: ['Use a dummy node to simplify the first insertion.', 'Continue while either list or carry has a value.', 'Digit is sum % 10; carry is floor(sum / 10).'], starterCode: 'function addTwoNumbers(l1, l2) {\\n  // your code\\n}', solutionCode: 'function addTwoNumbers(l1, l2) {\\n  const dummy = new ListNode(0);\\n  let tail = dummy, carry = 0;\\n  while (l1 || l2 || carry) {\\n    const sum = (l1?.val ?? 0) + (l2?.val ?? 0) + carry;\\n    carry = Math.floor(sum / 10);\\n    tail.next = new ListNode(sum % 10);\\n    tail = tail.next; l1 = l1?.next; l2 = l2?.next;\\n  }\\n  return dummy.next;\\n}', complexity: { time: 'O(max(m, n))', space: 'O(max(m, n))' }, checkpoint: { question: 'What makes the dummy node useful?', choices: ['It stores the carry', 'It removes the special case for the head', 'It reverses the list'], answer: 1 },
+    prompt: 'Two non-empty linked lists represent two non-negative integers in reverse order. Return their sum as a linked list.', hints: ['Use a dummy node to simplify the first insertion.', 'Continue while either list or carry has a value.', 'Digit is sum % 10; carry is floor(sum / 10).'], starterCode: 'function addTwoNumbers(l1, l2) {\\n  // your code\\n}', solutionCode: 'function addTwoNumbers(l1, l2) {\\n  const dummy = { val: 0, next: null };\\n  let tail = dummy, carry = 0;\\n  while (l1 || l2 || carry) {\\n    const sum = (l1?.val ?? 0) + (l2?.val ?? 0) + carry;\\n    carry = Math.floor(sum / 10);\\n    tail.next = { val: sum % 10, next: null };\\n    tail = tail.next; l1 = l1?.next; l2 = l2?.next;\\n  }\\n  return dummy.next;\\n}', complexity: { time: 'O(max(m, n))', space: 'O(max(m, n))' }, checkpoint: { question: 'What makes the dummy node useful?', choices: ['It stores the carry', 'It removes the special case for the head', 'It reverses the list'], answer: 1 },
   },
   {
     slug: 'binary-tree-level-order-traversal', estimatedMinutes: 15,
     summary: 'Read a tree breadth-first, one level at a time.', tags: ['tree', 'BFS', 'queue'],
     steps: sharedSteps('Breadth-first search uses a queue. Capture the queue length before each level so children added during this pass belong to the next level.', 'The queue is a conveyor belt: remove every node currently on it, then append their children behind the new level boundary.',),
-    prompt: 'Given the root of a binary tree, return the level order traversal of its node values.', hints: ['Return an empty array for no root.', 'Use queue length to isolate a level.', 'Append children after reading the current node.'], starterCode: 'function levelOrder(root) {\\n  // your code\\n}', solutionCode: 'function levelOrder(root) {\\n  if (!root) return [];\\n  const result = [], queue = [root];\\n  while (queue.length) {\\n    const level = [];\\n    for (let i = queue.length; i > 0; i--) {\\n      const node = queue.shift();\\n      level.push(node.val);\\n      if (node.left) queue.push(node.left);\\n      if (node.right) queue.push(node.right);\\n    }\\n    result.push(level);\\n  }\\n  return result;\\n}', complexity: { time: 'O(n)', space: 'O(n)' }, checkpoint: { question: 'How do we know where one level ends?', choices: ['Use a null marker only', 'Capture queue length before the loop', 'Compare node values'], answer: 1 },
+    prompt: 'Given the root of a binary tree, return the level order traversal of its node values.', hints: ['Return an empty array for no root.', 'Use queue length to isolate a level.', 'Append children after reading the current node.'], starterCode: 'function levelOrder(root) {\\n  // your code\\n}', solutionCode: 'function levelOrder(root) {\\n  if (!root) return [];\\n  const result = [];\\n  let frontier = [root];\\n\\n  while (frontier.length) {\\n    result.push(frontier.map((node) => node.val));\\n\\n    // Build the next level instead of shifting, which would be O(n) per node.\\n    const next = [];\\n    for (const node of frontier) {\\n      if (node.left) next.push(node.left);\\n      if (node.right) next.push(node.right);\\n    }\\n    frontier = next;\\n  }\\n  return result;\\n}', complexity: { time: 'O(n)', space: 'O(n)' }, checkpoint: { question: 'How do we know where one level ends?', choices: ['Use a null marker only', 'Capture queue length before the loop', 'Compare node values'], answer: 1 },
   },
   {
     slug: 'number-of-islands', estimatedMinutes: 23,
@@ -185,7 +185,7 @@ const lessons: Lesson[] = [
     slug: 'kth-largest-element-in-an-array', estimatedMinutes: 19,
     summary: 'Keep only the k largest values with a small min-heap.', tags: ['heap', 'selection', 'arrays'],
     steps: sharedSteps('A min-heap of size k keeps the current top k values. Its root is the smallest among the winners; anything smaller can be ignored.', 'The heap is a tiny leaderboard. Push a candidate, then remove the weakest when the board grows beyond k.',),
-    prompt: 'Find the kth largest element in an unsorted array. The answer is the element in sorted order, not the kth distinct value.', hints: ['Maintain a min-heap with at most k entries.', 'If the heap grows beyond k, remove its minimum.', 'The root is kth largest at the end.'], starterCode: 'function findKthLargest(nums, k) {\\n  // your code\\n}', solutionCode: 'function findKthLargest(nums, k) {\\n  const heap = new MinHeap();\\n  for (const value of nums) {\\n    heap.push(value);\\n    if (heap.size() > k) heap.pop();\\n  }\\n  return heap.peek();\\n}', complexity: { time: 'O(n log k)', space: 'O(k)' }, checkpoint: { question: 'Why use a min-heap for kth largest?', choices: ['Its root is the weakest of the top k', 'It sorts all values for free', 'It always stores the smallest k'], answer: 0 },
+    prompt: 'Find the kth largest element in an unsorted array. The answer is the element in sorted order, not the kth distinct value.', hints: ['Maintain a min-heap with at most k entries.', 'If the heap grows beyond k, remove its minimum.', 'The root is kth largest at the end.'], starterCode: 'function findKthLargest(nums, k) {\\n  // your code\\n}', solutionCode: '// JavaScript has no built-in heap, so here is a small one.\n// Comparator: (a, b) => a - b for a min-heap.\nclass Heap {\n  constructor(compare) { this.compare = compare; this.items = []; }\n  size() { return this.items.length; }\n  peek() { return this.items[0]; }\n  push(value) {\n    this.items.push(value);\n    let i = this.items.length - 1;\n    while (i > 0) {\n      const parent = (i - 1) >> 1;\n      if (this.compare(this.items[i], this.items[parent]) >= 0) break;\n      [this.items[i], this.items[parent]] = [this.items[parent], this.items[i]];\n      i = parent;\n    }\n  }\n  pop() {\n    const top = this.items[0];\n    const last = this.items.pop();\n    if (this.items.length) {\n      this.items[0] = last;\n      let i = 0;\n      for (;;) {\n        const l = i * 2 + 1, r = l + 1;\n        let best = i;\n        if (l < this.items.length && this.compare(this.items[l], this.items[best]) < 0) best = l;\n        if (r < this.items.length && this.compare(this.items[r], this.items[best]) < 0) best = r;\n        if (best === i) break;\n        [this.items[i], this.items[best]] = [this.items[best], this.items[i]];\n        i = best;\n      }\n    }\n    return top;\n  }\n}\n\nfunction findKthLargest(nums, k) {\\n  const heap = new Heap((a, b) => a - b);\\n  for (const value of nums) {\\n    heap.push(value);\\n    if (heap.size() > k) heap.pop();\\n  }\\n  return heap.peek();\\n}', complexity: { time: 'O(n log k)', space: 'O(k)' }, checkpoint: { question: 'Why use a min-heap for kth largest?', choices: ['Its root is the weakest of the top k', 'It sorts all values for free', 'It always stores the smallest k'], answer: 0 },
   },
   {
     slug: 'coin-change', estimatedMinutes: 24,
@@ -214,3 +214,138 @@ export const problems: Problem[] = neetcode150.map((entry) => {
 });
 
 export { patterns };
+
+/**
+ * Per-pattern teaching material for the concept and visual steps.
+ *
+ * These steps used to hardcode sliding-window advice and a moving-window
+ * diagram, which is actively misleading on a binary search or tree lesson.
+ */
+export type PatternTeaching = {
+  /** How to recognise the pattern in a problem statement. */
+  tell: string;
+  visualTitle: string;
+  cells: string[];
+  /** Indices in the current working set. */
+  active: number[];
+  /** Indices the algorithm is deciding about right now. */
+  focus: number[];
+  axis: string;
+  closing: string;
+};
+
+const genericTeaching: PatternTeaching = {
+  tell: 'Name the state the algorithm carries and the fact it keeps true; the code follows from those two sentences.',
+  visualTitle: 'State in motion',
+  cells: ['2', '7', '1', '8', '2', '8'],
+  active: [0, 1, 2],
+  focus: [3],
+  axis: 'start ─────────────── end',
+  closing: 'At each move the structure holds just enough history to make the next decision. That is the pattern’s leverage.',
+};
+
+export const patternTeaching: Record<string, PatternTeaching> = {
+  'Sliding window': {
+    tell: 'When a problem asks for the “longest”, “smallest” or “at most” valid range, ask whether a moving window can keep that condition true.',
+    visualTitle: 'Window in motion',
+    cells: ['a', 'b', 'c', 'a', 'd', 'e'],
+    active: [1, 2, 3],
+    focus: [4],
+    axis: 'left edge ─────────────── right edge',
+    closing: 'Both edges only ever move forward, so each element is handled a constant number of times.',
+  },
+  'Two pointers': {
+    tell: 'When the input is sorted, or the answer pairs a value from each end, two walking pointers replace a nested loop.',
+    visualTitle: 'Closing in from both ends',
+    cells: ['1', '3', '4', '7', '9', '12'],
+    active: [1, 2, 3, 4],
+    focus: [0, 5],
+    axis: 'left →                    ← right',
+    closing: 'Every comparison rules out a whole set of pairs, which is what turns O(n²) into O(n).',
+  },
+  'Binary search': {
+    tell: 'When a yes/no test flips exactly once across the range, you can search the answer itself, not just a sorted array.',
+    visualTitle: 'Halving the range',
+    cells: ['no', 'no', 'no', 'yes', 'yes', 'yes'],
+    active: [3, 4, 5],
+    focus: [2, 3],
+    axis: 'low ────── mid ────── high',
+    closing: 'Each step throws away half the candidates, so the work is logarithmic in the range, not the data.',
+  },
+  Intervals: {
+    tell: 'When the input is ranges with a start and an end, sorting turns overlap into a question about neighbours only.',
+    visualTitle: 'Merging a timeline',
+    cells: ['1–3', '2–6', '8–10', '15–18'],
+    active: [0, 1],
+    focus: [2],
+    axis: 'sorted by start ──────────→',
+    closing: 'The last interval stays editable until a gap proves it finished.',
+  },
+  Stack: {
+    tell: 'When each element waits for a later one — the next greater, the matching bracket — a stack holds the unresolved work.',
+    visualTitle: 'Unresolved work, newest on top',
+    cells: ['73', '74', '75', '71'],
+    active: [3],
+    focus: [2],
+    axis: 'bottom ──────────────── top',
+    closing: 'Each item is pushed and popped once, replacing repeated backward scans with linear work.',
+  },
+  'Linked list': {
+    tell: 'When the task is about the structure — reversing, reordering, detecting a loop — work on pointers rather than values.',
+    visualTitle: 'Rewiring one link at a time',
+    cells: ['1', '2', '3', '4', '∅'],
+    active: [0, 1],
+    focus: [2],
+    axis: 'prev ── curr ── next',
+    closing: 'Save the next pointer before you overwrite a link, or the rest of the list becomes unreachable.',
+  },
+  Trees: {
+    tell: 'Ask whether the answer depends on depth or on level: depth suggests recursion, level suggests a queue.',
+    visualTitle: 'Level by level',
+    cells: ['3', '9', '20', '15', '7'],
+    active: [1, 2],
+    focus: [3, 4],
+    axis: 'root ── level 1 ── level 2',
+    closing: 'Capture the frontier size before each pass and the level boundary takes care of itself.',
+  },
+  Graphs: {
+    tell: 'When the data is cells or nodes joined by edges, the question is usually reachability, components or shortest distance.',
+    visualTitle: 'Exploring a frontier',
+    cells: ['●', '●', '○', '●', '○', '○'],
+    active: [0, 1, 3],
+    focus: [2],
+    axis: 'visited ──────── frontier ──────── unseen',
+    closing: 'Mark a node the moment it enters the frontier, and a cycle can never enqueue it twice.',
+  },
+  Backtracking: {
+    tell: 'When the answer is every combination, permutation or arrangement, build it by choosing, recursing and undoing.',
+    visualTitle: 'A search tree with pruning',
+    cells: ['[]', '[1]', '[1,2]', '✗', '[1,3]'],
+    active: [0, 1, 2],
+    focus: [3],
+    axis: 'choose ── recurse ── undo',
+    closing: 'The search is exponential, so every branch you can rule out early is the real optimisation.',
+  },
+  Heap: {
+    tell: 'When only the best k items matter, a heap of size k keeps the cost tied to k instead of the whole input.',
+    visualTitle: 'A small leaderboard',
+    cells: ['5', '8', '12', '↓3'],
+    active: [0, 1, 2],
+    focus: [3],
+    axis: 'root = weakest kept ──────→',
+    closing: 'The root is the first candidate to drop, which is what makes each update logarithmic in k.',
+  },
+  'Dynamic programming': {
+    tell: 'When the same smaller question keeps reappearing, name the state and store its answer once.',
+    visualTitle: 'A table filled in order',
+    cells: ['0', '1', '1', '2', '3', '?'],
+    active: [0, 1, 2, 3, 4],
+    focus: [5],
+    axis: 'dp[0] ──────────────→ dp[n]',
+    closing: 'Each cell is computed from cells already finished, so the recursion collapses into a single sweep.',
+  },
+};
+
+export function teachingFor(pattern: string): PatternTeaching {
+  return patternTeaching[pattern] ?? genericTeaching;
+}

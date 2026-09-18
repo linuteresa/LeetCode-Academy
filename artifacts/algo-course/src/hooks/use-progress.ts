@@ -7,15 +7,23 @@ import {
   clearLocalProgress,
   emptyProgress,
   noteRecent,
+  normalizeProgress,
   readLocalProgress,
   registerActivity,
+  setStatusAt,
+  toggleBookmarkAt,
   writeLocalProgress,
+  type ChangeClock,
   type Persisted,
 } from '@/lib/progress';
 
+/**
+ * The row as stored. `statuses` and `bookmarks` are jsonb, so the per-change
+ * clock rides along inside them and needs no extra column.
+ */
 type ProgressRow = {
   statuses: Record<string, ProblemStatus> | null;
-  bookmarks: string[] | null;
+  bookmarks: string[] | { list?: string[]; at?: ChangeClock } | null;
   streak: number | null;
   last_slug: string | null;
 };
@@ -25,16 +33,18 @@ export type SyncState = 'local' | 'syncing' | 'synced' | 'error' | 'no-storage';
 const PUSH_DEBOUNCE_MS = 800;
 
 function rowToProgress(row: ProgressRow): Persisted {
-  return {
+  // Rows written before per-change timestamps stored a plain string[]; those
+  // entries simply carry no clock and lose to anything newer.
+  const bookmarks = Array.isArray(row.bookmarks) ? row.bookmarks : (row.bookmarks?.list ?? []);
+  const updatedAt = Array.isArray(row.bookmarks) ? {} : (row.bookmarks?.at ?? {});
+
+  return normalizeProgress({
     statuses: row.statuses ?? {},
-    bookmarks: row.bookmarks ?? [],
+    bookmarks,
+    updatedAt,
     streak: row.streak ?? 0,
     lastSlug: row.last_slug ?? undefined,
-    // Owner is stamped by the caller; recency and activity dates are per-device.
-    ownerId: null,
-    recent: [],
-    lastActiveDate: null,
-  };
+  });
 }
 
 /**
@@ -126,7 +136,7 @@ export function useProgress() {
         {
           user_id: userId,
           statuses: progress.statuses,
-          bookmarks: progress.bookmarks,
+          bookmarks: { list: progress.bookmarks, at: progress.updatedAt },
           streak: progress.streak,
           last_slug: progress.lastSlug ?? null,
         },
@@ -141,20 +151,23 @@ export function useProgress() {
   }, [progress, userId]);
 
   const setStatus = useCallback((slug: string, status: ProblemStatus) => {
-    setProgress((p) =>
-      registerActivity(
-        noteRecent({ ...p, statuses: { ...p.statuses, [slug]: status }, lastSlug: slug }, slug),
-      ),
-    );
+    setProgress((p) => registerActivity(noteRecent(setStatusAt(p, slug, status), slug)));
   }, []);
 
   const toggleBookmark = useCallback((slug: string) => {
-    setProgress((p) => ({
-      ...p,
-      bookmarks: p.bookmarks.includes(slug)
-        ? p.bookmarks.filter((item) => item !== slug)
-        : [...p.bookmarks, slug],
-    }));
+    setProgress((p) => toggleBookmarkAt(p, slug));
+  }, []);
+
+  /**
+   * Record that a lesson was opened, without changing its status. Returning to
+   * an in-progress lesson is real activity: it should extend the streak and
+   * move the lesson to the front of the recent list.
+   */
+  const visit = useCallback((slug: string) => {
+    setProgress((p) => {
+      const next = registerActivity(noteRecent({ ...p, lastSlug: slug }, slug));
+      return next === p ? p : next;
+    });
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
@@ -182,6 +195,7 @@ export function useProgress() {
     progress,
     setStatus,
     toggleBookmark,
+    visit,
     session,
     authReady,
     syncState,
