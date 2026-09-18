@@ -68,7 +68,7 @@ a { color: inherit; text-decoration: none; }
 .account-identity small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .account-sync { display: flex; align-items: center; gap: 6px; margin: 2px 4px 6px; padding: 7px 8px; border-radius: 9px; background: #f2f5f4; color: var(--muted); font-size: 10.5px; line-height: 1.35; }
 .account-sync.synced { background: #e6f4ec; color: #28673a; }
-.account-sync.error { background: #fbeae6; color: #954e40; }
+.account-sync.error, .account-sync.no-storage { background: #fbeae6; color: #954e40; }
 .account-action { width: 100%; display: flex; align-items: center; gap: 7px; padding: 9px 10px; border: 0; border-radius: 9px; background: none; color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
 .account-action:hover { background: #f2f5f4; }
 .spin { animation: account-spin 1s linear infinite; }
