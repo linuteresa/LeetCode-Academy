@@ -4,39 +4,87 @@ import { Link, Route, Router as WouterRouter, Switch, useLocation, useParams } f
 import {
   ArrowLeft, ArrowRight, BarChart3, Bookmark, BookOpen, BrainCircuit, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Code2, Compass, Flame, GitBranch,
-  ExternalLink, Grid2X2, Layers3, Lightbulb, ListFilter, Menu, Network, Play, RotateCcw, Search,
+  ExternalLink, Grid2X2, Layers3, Lightbulb, ListFilter, LogIn, LogOut, Menu, Network, Play, RefreshCw, RotateCcw, Search,
   Sparkles, Target, Timer, Trophy, X, Zap,
 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { intuitionChecksFor, patterns, problems, type IntuitionCheck, type Problem, type ProblemStatus } from '@/data/problems';
+import { useProgress, type SyncState } from '@/hooks/use-progress';
+import { authConfigured } from '@/lib/supabase';
+import type { Persisted } from '@/lib/progress';
+import type { Session } from '@supabase/supabase-js';
 
 const queryClient = new QueryClient();
-const STORAGE_KEY = 'algocourse-progress-v1';
-type Persisted = { statuses: Record<string, ProblemStatus>; bookmarks: string[]; lastSlug?: string; streak: number };
 
-function readProgress(): Persisted {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved) as Persisted;
-  } catch { /* local-only app can safely start fresh */ }
-  return { statuses: {}, bookmarks: [], streak: 4 };
+/** Two initials for the avatar, from a display name or an email address. */
+function initialsFor(session: Session): string {
+  const name = (session.user.user_metadata?.full_name as string | undefined)?.trim();
+  if (name) {
+    const parts = name.split(/\s+/);
+    return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
+  }
+  return (session.user.email ?? '?').slice(0, 2).toUpperCase();
 }
 
-function useProgress() {
-  const [progress, setProgress] = useState<Persisted>(readProgress);
-  useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(progress)), [progress]);
-  const setStatus = (slug: string, status: ProblemStatus) => setProgress((p) => ({ ...p, statuses: { ...p.statuses, [slug]: status }, lastSlug: slug }));
-  const toggleBookmark = (slug: string) => setProgress((p) => ({ ...p, bookmarks: p.bookmarks.includes(slug) ? p.bookmarks.filter((item) => item !== slug) : [...p.bookmarks, slug] }));
-  return { progress, setStatus, toggleBookmark };
+const syncLabels: Record<SyncState, string> = {
+  local: 'Saved on this device',
+  syncing: 'Saving\u2026',
+  synced: 'Progress saved to your account',
+  error: 'Could not reach your account \u2014 saved on this device',
+};
+
+/**
+ * Sign-in control in the top bar. With no Supabase project configured the app
+ * is local-only, so this falls back to the original static avatar.
+ */
+function Account({ session, authReady, syncState, signInWithGoogle, signOut }: AuthProps) {
+  const [open, setOpen] = useState(false);
+
+  if (!authConfigured) return <div className="avatar" data-testid="text-avatar">AC</div>;
+  if (!authReady) return <div className="avatar" data-testid="text-avatar" aria-busy="true">\u00b7\u00b7</div>;
+
+  if (!session) {
+    return <button className="btn btn-secondary account-signin" onClick={signInWithGoogle} data-testid="button-sign-in">
+      <LogIn size={14} /> Sign in
+    </button>;
+  }
+
+  const avatarUrl = session.user.user_metadata?.avatar_url as string | undefined;
+  return <div className="account">
+    <button className="avatar account-avatar" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-haspopup="menu" title={session.user.email ?? undefined} data-testid="button-account">
+      {avatarUrl ? <img src={avatarUrl} alt="" referrerPolicy="no-referrer" /> : initialsFor(session)}
+    </button>
+    {open && <div className="account-menu" role="menu">
+      <div className="account-identity">
+        <strong>{(session.user.user_metadata?.full_name as string | undefined) ?? 'Signed in'}</strong>
+        <small>{session.user.email}</small>
+      </div>
+      <div className={`account-sync ${syncState}`}>
+        {syncState === 'syncing' ? <RefreshCw size={12} className="spin" /> : <CheckCircle2 size={12} />}
+        {syncLabels[syncState]}
+      </div>
+      <button className="account-action" onClick={() => { setOpen(false); signOut(); }} role="menuitem" data-testid="button-sign-out">
+        <LogOut size={13} /> Sign out
+      </button>
+    </div>}
+  </div>;
 }
 
 function statusOf(problem: Problem, progress: Persisted): ProblemStatus {
   return progress.statuses[problem.slug] ?? problem.status;
 }
 
-function Shell({ children, progress }: { children: ReactNode; progress: Persisted }) {
+type AuthProps = {
+  session: Session | null;
+  authReady: boolean;
+  syncState: SyncState;
+  signInWithGoogle: () => void;
+  signOut: () => void;
+};
+
+function Shell({ children, progress, auth }: { children: ReactNode; progress: Persisted; auth: AuthProps }) {
   const [location] = useLocation();
   const isActive = (path: string) => path === '/' ? location === '/' : location.startsWith(path);
   return (
@@ -53,7 +101,7 @@ function Shell({ children, progress }: { children: ReactNode; progress: Persiste
         </nav>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="streak" data-testid="status-streak"><Flame size={14} /> {progress.streak} day streak</div>
-          <div className="avatar" data-testid="text-avatar">AC</div>
+          <Account {...auth} />
         </div>
       </header>
       {children}
@@ -154,7 +202,7 @@ function Library({ progress, toggleBookmark }: { progress: Persisted; toggleBook
         <select aria-label="Filter by length" className="select-input" value={time} onChange={(event) => setTime(event.target.value)} data-testid="select-time"><option>Any length</option><option>Quick · under 20m</option><option>Deep dive · 20m+</option></select>
       </div>
       <div className="filter-pills">{['All patterns', ...patterns].slice(0, 7).map((item) => <button className={`filter-pill ${pattern === item ? 'active' : ''}`} key={item} onClick={() => setPattern(item)} data-testid={`button-filter-${item.toLowerCase().replaceAll(' ', '-')}`}>{item}</button>)}</div>
-      <div className="result-meta"><ListFilter size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />{filtered.length} of {problems.length} problems · medium difficulty · locally saved</div>
+      <div className="result-meta"><ListFilter size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />{filtered.length} of {problems.length} problems · NeetCode 150 · locally saved</div>
       {filtered.length ? <div className="problem-list stagger">{filtered.map((problem) => {
         const currentStatus = statusOf(problem, progress);
         return <div className="panel problem-row" key={problem.slug} data-testid={`row-problem-${problem.slug}`}>
@@ -171,8 +219,8 @@ function Library({ progress, toggleBookmark }: { progress: Persisted; toggleBook
 }
 
 function PatternsPage({ progress }: { progress: Persisted }) {
-  const descriptions: Record<string, string> = { 'Sliding window': 'Keep a valid range while the right edge explores.', 'Two pointers': 'Turn a quadratic pair search into a single walk.', 'Binary search': 'Use order to cut the search space in half.', Intervals: 'Sort the timeline, then merge the frontier.', Stack: 'Hold unresolved work until the next signal arrives.', 'Linked list': 'Rewire pointers without losing your place.', Trees: 'Choose breadth or depth to mirror the question.', Graphs: 'Explore connected components without recounting.', Backtracking: 'Choose, explore, undo — then choose again.', Heap: 'Keep the most useful candidates at the top.', 'Dynamic programming': 'Name the subproblem and reuse its answer.' };
-  const icons = [Layers3, GitBranch, Target, BarChart3, Zap, Network, GitBranch, Network, RotateCcw, Trophy, Sparkles, BrainCircuit];
+  const descriptions: Record<string, string> = { 'Arrays & hashing': 'Trade a second pass for a map of what you have already seen.', Tries: 'Share prefixes so a lookup walks one letter at a time.', 'Advanced graphs': 'Weighted edges, shortest paths and spanning trees.', '2-D dynamic programming': 'Two inputs, one grid of reusable answers.', Greedy: 'Prove the local choice is safe, then never look back.', 'Math & geometry': 'Find the arithmetic trick hiding in the layout.', 'Bit manipulation': 'Let XOR, masks and shifts do the counting for you.', 'Sliding window': 'Keep a valid range while the right edge explores.', 'Two pointers': 'Turn a quadratic pair search into a single walk.', 'Binary search': 'Use order to cut the search space in half.', Intervals: 'Sort the timeline, then merge the frontier.', Stack: 'Hold unresolved work until the next signal arrives.', 'Linked list': 'Rewire pointers without losing your place.', Trees: 'Choose breadth or depth to mirror the question.', Graphs: 'Explore connected components without recounting.', Backtracking: 'Choose, explore, undo — then choose again.', Heap: 'Keep the most useful candidates at the top.', 'Dynamic programming': 'Name the subproblem and reuse its answer.' };
+  const icons = [Grid2X2, GitBranch, Layers3, Zap, Target, Network, GitBranch, Trophy, RotateCcw, BookOpen, Network, Compass, Sparkles, BrainCircuit, Flame, Clock3, BarChart3, Code2];
   return <main className="page"><div className="eyebrow">The map behind the questions</div><h1 className="display page-title">Patterns make<br /><span style={{ color: 'var(--coral)' }}>memory stick.</span></h1><p className="page-subtitle">Interview problems look infinite until you learn the handful of moves they keep remixing. Your progress, organized by instinct.</p><div className="pattern-grid stagger">{patterns.map((pattern, index) => { const related = problems.filter((p) => p.pattern === pattern); const done = related.filter((p) => statusOf(p, progress) === 'completed').length; const Icon = icons[index]; return <div className="panel pattern-card" key={pattern} data-testid={`card-pattern-${pattern.toLowerCase().replaceAll(' ', '-')}`}><span className="pattern-count">{done}/{related.length || 0}</span><div className="pattern-icon"><Icon size={17} /></div><h3>{pattern}</h3><p>{descriptions[pattern]}</p><div className="progress-track"><div className="progress-fill" style={{ width: `${related.length ? done / related.length * 100 : 0}%` }} /></div></div>; })}</div><div className="panel" style={{ marginTop: 30, padding: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, background: '#202d36', color: 'white' }}><div><div className="eyebrow" style={{ color: '#8edbd3' }}>A good next move</div><h2 style={{ fontFamily: 'Space Grotesk', letterSpacing: '-.04em', margin: '8px 0 5px' }}>Complete one problem in an unvisited pattern.</h2><p style={{ color: '#b5c9c6', margin: 0, fontSize: 12 }}>Breadth builds recognition faster than perfection.</p></div><Link href="/problems" className="btn btn-primary" data-testid="button-pattern-challenge">Find one <ArrowRight size={15} /></Link></div></main>;
 }
 
@@ -186,32 +234,37 @@ function Lesson({ progress, setStatus, toggleBookmark }: { progress: Persisted; 
   const [codeTab, setCodeTab] = useState<'starter' | 'solution'>('starter');
   const currentStatus = statusOf(problem, progress);
   const isDone = currentStatus === 'completed';
+  const steps = problem.steps ?? [];
+  const hints = problem.hints ?? [];
   const intuitionChecks = intuitionChecksFor(problem);
   const allChecksCorrect = intuitionChecks.every((check, index) => checkAnswers[index] === check.answer);
   useEffect(() => { if (currentStatus === 'not-started') setStatus(problem.slug, 'in-progress'); }, [problem.slug]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setStep(0); setCheckAnswers([]); setShowHints([]); setCodeTab('starter'); }, [problem.slug]);
   const chooseCheckAnswer = (checkIndex: number, answer: number) => setCheckAnswers((items) => { const next = [...items]; next[checkIndex] = answer; return next; });
+  if (!problem.lessonReady) {
+    return <PracticeView problem={problem} isDone={isDone} bookmarked={progress.bookmarks.includes(problem.slug)} toggleBookmark={toggleBookmark} setStatus={setStatus} codeTab={codeTab} setCodeTab={setCodeTab} />;
+  }
   const next = () => {
     if (step === 2 && !allChecksCorrect) return;
-    if (step < problem.steps.length - 1) setStep((value) => value + 1);
+    if (step < steps.length - 1) setStep((value) => value + 1);
     else setStatus(problem.slug, 'completed');
   };
   return <main className="lesson-shell">
     <div className="lesson-top"><Link href="/problems" className="back-link" data-testid="link-back-library"><ArrowLeft size={15} /> Back to library</Link><div className="lesson-progress"><span>Lesson {Math.min(step + 1, 4)} of 4</span><div className="progress-track"><div className="progress-fill" style={{ width: `${isDone ? 100 : ((step + (currentStatus === 'in-progress' ? 1 : 0)) / 4) * 100}%` }} /></div><button className={`icon-button ${progress.bookmarks.includes(problem.slug) ? 'bookmarked' : ''}`} onClick={() => toggleBookmark(problem.slug)} aria-label="Bookmark lesson" data-testid="button-bookmark-lesson"><Bookmark size={17} fill={progress.bookmarks.includes(problem.slug) ? 'currentColor' : 'none'} /></button></div></div>
     <div className="lesson-layout">
-      <aside className="lesson-side"><h4>{problem.pattern}</h4><div className="step-nav">{problem.steps.map((item, index) => <button className={`step-button ${step === index ? 'active' : ''} ${index < step || isDone ? 'done' : ''}`} onClick={() => setStep(index)} key={item.kind} data-testid={`button-step-${index + 1}`}><span className="step-number">{index < step || isDone ? <Check size={12} /> : index + 1}</span><span>{item.title}</span></button>)}</div><div style={{ marginTop: 25, padding: 13, background: '#fff0cd', borderRadius: 12, color: '#72571e', fontSize: 11, lineHeight: 1.55 }}><Sparkles size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} /> Stay curious. The pattern is the win.</div></aside>
+      <aside className="lesson-side"><h4>{problem.pattern}</h4><div className="step-nav">{steps.map((item, index) => <button className={`step-button ${step === index ? 'active' : ''} ${index < step || isDone ? 'done' : ''}`} onClick={() => setStep(index)} key={item.kind} data-testid={`button-step-${index + 1}`}><span className="step-number">{index < step || isDone ? <Check size={12} /> : index + 1}</span><span>{item.title}</span></button>)}</div><div style={{ marginTop: 25, padding: 13, background: '#fff0cd', borderRadius: 12, color: '#72571e', fontSize: 11, lineHeight: 1.55 }}><Sparkles size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} /> Stay curious. The pattern is the win.</div></aside>
       <section className="lesson-main">
-        <div className="lesson-header"><div className="eyebrow">{problem.number} · {problem.pattern} · medium</div><h1 className="display">{problem.title}</h1><p>{problem.summary}</p></div>
+        <div className="lesson-header"><div className="eyebrow">{problem.number} · {problem.pattern} · {problem.difficulty.toLowerCase()}</div><h1 className="display">{problem.title}</h1><p>{problem.summary}</p></div>
         {isDone ? <div className="complete-card"><div className="complete-icon"><Trophy size={31} /></div><h2>Pattern added to your toolkit.</h2><p>You completed this guided lesson. The next time this shape appears, you’ll have a place to start.</p><div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}><button className="btn btn-secondary" onClick={() => { setStep(0); setCheckAnswers([]); setStatus(problem.slug, 'in-progress'); }} data-testid="button-review-lesson"><RotateCcw size={14} /> Review lesson</button><Link href="/problems" className="btn btn-primary" data-testid="button-next-problem">Choose another <ArrowRight size={14} /></Link></div></div> : <LessonStepContent problem={problem} step={step} intuitionChecks={intuitionChecks} checkAnswers={checkAnswers} setCheckAnswer={chooseCheckAnswer} showHints={showHints} setShowHints={setShowHints} codeTab={codeTab} setCodeTab={setCodeTab} />}
-         {!isDone && <div className="lesson-actions"><button className="btn btn-secondary" disabled={step === 0} style={{ opacity: step === 0 ? .45 : 1 }} onClick={() => setStep((value) => value - 1)} data-testid="button-previous-step"><ArrowLeft size={14} /> Previous</button><button className="btn btn-primary" disabled={step === 2 && !allChecksCorrect} onClick={next} data-testid="button-next-step">{step === problem.steps.length - 1 ? 'Complete lesson' : 'Next step'} <ArrowRight size={14} /></button></div>}
+         {!isDone && <div className="lesson-actions"><button className="btn btn-secondary" disabled={step === 0} style={{ opacity: step === 0 ? .45 : 1 }} onClick={() => setStep((value) => value - 1)} data-testid="button-previous-step"><ArrowLeft size={14} /> Previous</button><button className="btn btn-primary" disabled={step === 2 && !allChecksCorrect} onClick={next} data-testid="button-next-step">{step === steps.length - 1 ? 'Complete lesson' : 'Next step'} <ArrowRight size={14} /></button></div>}
       </section>
-      <aside className="lesson-right"><div className="panel lesson-right-card"><h4>Hints, when useful</h4>{problem.hints.map((hint, index) => <div className="hint" key={hint}><button onClick={() => setShowHints((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index])} data-testid={`button-hint-${index + 1}`}><span>Hint {index + 1}</span>{showHints.includes(index) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>{showHints.includes(index) && <p>{hint}</p>}</div>)}</div><div className="panel lesson-right-card" style={{ marginTop: 14, background: '#e8e5f5', borderColor: '#cfcae9' }}><CircleHelp size={17} color="#5b568d" /><p style={{ color: '#5b568d', fontSize: 11, lineHeight: 1.6, marginBottom: 0 }}>You can revisit any step from the rail. Understanding beats speed here.</p></div></aside>
+      <aside className="lesson-right"><div className="panel lesson-right-card"><h4>Hints, when useful</h4>{hints.map((hint, index) => <div className="hint" key={hint}><button onClick={() => setShowHints((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index])} data-testid={`button-hint-${index + 1}`}><span>Hint {index + 1}</span>{showHints.includes(index) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>{showHints.includes(index) && <p>{hint}</p>}</div>)}</div><div className="panel lesson-right-card" style={{ marginTop: 14, background: '#e8e5f5', borderColor: '#cfcae9' }}><CircleHelp size={17} color="#5b568d" /><p style={{ color: '#5b568d', fontSize: 11, lineHeight: 1.6, marginBottom: 0 }}>You can revisit any step from the rail. Understanding beats speed here.</p></div></aside>
     </div>
   </main>;
 }
 
 function LessonStepContent({ problem, step, intuitionChecks, checkAnswers, setCheckAnswer, showHints, setShowHints, codeTab, setCodeTab }: { problem: Problem; step: number; intuitionChecks: IntuitionCheck[]; checkAnswers: (number | null)[]; setCheckAnswer: (checkIndex: number, answer: number) => void; showHints: number[]; setShowHints: (value: number[] | ((items: number[]) => number[])) => void; codeTab: 'starter' | 'solution'; setCodeTab: (value: 'starter' | 'solution') => void }) {
-  const item = problem.steps[step];
+  const item = (problem.steps ?? [])[step];
   if (item.kind === 'concept') return <div className="panel lesson-card"><StepHeading icon={<Lightbulb />} item={item} /><div className="lesson-prose"><p>{item.body}</p><div className="callout"><strong>The tell:</strong> When a problem asks for the “longest,” “smallest,” or “at most” valid range, ask whether a moving window can keep that condition true.</div><p>Start by naming what must remain true. The code gets dramatically easier once the invariant has a sentence.</p></div></div>;
   if (item.kind === 'visual') return <div className="panel lesson-card"><StepHeading icon={<Layers3 />} item={item} /><div className="lesson-prose"><p>{item.body}</p><div className="visual-model"><h3>Window / frontier in motion</h3><div className="array-visual">{['2', '7', '1', '8', '2', '8'].map((value, index) => <div className={`array-cell ${index < 4 ? 'cool' : index === 4 ? 'hot' : ''}`} key={index}>{value}</div>)}</div><div className="arrow-label">left edge ─────────────── right edge</div></div><p>At each move, the data structure holds just enough history to make the next decision. That is the pattern’s leverage.</p></div></div>;
   if (item.kind === 'checkpoint') {
@@ -226,6 +279,54 @@ function LessonStepContent({ problem, step, intuitionChecks, checkAnswers, setCh
   return <div className="panel lesson-card"><StepHeading icon={<Code2 />} item={item} /><div className="lesson-prose"><div className="practice-header"><div><p>{problem.prompt}</p><span className="tag aqua">Understanding gate cleared</span></div><a className="btn btn-secondary" href={`https://leetcode.com/problems/${problem.slug}/`} target="_blank" rel="noreferrer" data-testid="link-open-leetcode">Open on LeetCode <ExternalLink size={14} /></a></div><div className="code-tabs"><button className={`code-tab ${codeTab === 'starter' ? 'active' : ''}`} onClick={() => setCodeTab('starter')} data-testid="button-code-starter">Starter</button><button className={`code-tab ${codeTab === 'solution' ? 'active' : ''}`} onClick={() => setCodeTab('solution')} data-testid="button-code-solution">Reference solution</button></div><pre className="code-block"><code>{codeTab === 'starter' ? problem.starterCode : problem.solutionCode}</code></pre><div className="complexity"><span>time · {problem.complexity.time}</span><span>space · {problem.complexity.space}</span></div></div></div>;
 }
 
+/**
+ * Shown for a problem that is in the catalog but has no guided lesson yet:
+ * the statement, a reference solution and its complexity, with no step rail.
+ */
+function PracticeView({ problem, isDone, bookmarked, toggleBookmark, setStatus, codeTab, setCodeTab }: { problem: Problem; isDone: boolean; bookmarked: boolean; toggleBookmark: (slug: string) => void; setStatus: (slug: string, status: ProblemStatus) => void; codeTab: 'starter' | 'solution'; setCodeTab: (value: 'starter' | 'solution') => void }) {
+  return <main className="lesson-shell">
+    <div className="lesson-top">
+      <Link href="/problems" className="back-link" data-testid="link-back-library"><ArrowLeft size={15} /> Back to library</Link>
+      <div className="lesson-progress">
+        <span>{isDone ? 'Completed' : 'Practice'}</span>
+        <button className={`icon-button ${bookmarked ? 'bookmarked' : ''}`} onClick={() => toggleBookmark(problem.slug)} aria-label="Bookmark problem" data-testid="button-bookmark-lesson"><Bookmark size={17} fill={bookmarked ? 'currentColor' : 'none'} /></button>
+      </div>
+    </div>
+    <div className="lesson-layout" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
+      <section className="lesson-main">
+        <div className="lesson-header">
+          <div className="eyebrow">{problem.number} · {problem.pattern} · {problem.difficulty.toLowerCase()}</div>
+          <h1 className="display">{problem.title}</h1>
+          <p>{problem.summary}</p>
+        </div>
+        <div className="panel lesson-card">
+          <div className="lesson-prose">
+            <div className="practice-header">
+              <div>
+                <p>{problem.prompt}</p>
+                <span className="tag ink">Guided lesson coming soon</span>
+              </div>
+              <a className="btn btn-secondary" href={`https://leetcode.com/problems/${problem.slug}/`} target="_blank" rel="noreferrer" data-testid="link-open-leetcode">Open on LeetCode <ExternalLink size={14} /></a>
+            </div>
+            <div className="code-tabs">
+              <button className={`code-tab ${codeTab === 'starter' ? 'active' : ''}`} onClick={() => setCodeTab('starter')} data-testid="button-code-starter">Starter</button>
+              <button className={`code-tab ${codeTab === 'solution' ? 'active' : ''}`} onClick={() => setCodeTab('solution')} data-testid="button-code-solution">Reference solution</button>
+            </div>
+            <pre className="code-block"><code>{codeTab === 'starter' ? problem.starterCode : problem.solutionCode}</code></pre>
+            <div className="complexity"><span>time · {problem.complexity.time}</span><span>space · {problem.complexity.space}</span></div>
+            <div className="lesson-actions">
+              {isDone
+                ? <button className="btn btn-secondary" onClick={() => setStatus(problem.slug, 'in-progress')} data-testid="button-review-lesson"><RotateCcw size={14} /> Mark as in progress</button>
+                : <button className="btn btn-primary" onClick={() => setStatus(problem.slug, 'completed')} data-testid="button-mark-complete"><CheckCircle2 size={14} /> Mark as solved</button>}
+              <Link href="/problems" className="btn btn-secondary" data-testid="button-next-problem">Choose another <ArrowRight size={14} /></Link>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>;
+}
+
 function StepHeading({ icon, item }: { icon: ReactNode; item: { title: string; subtitle: string } }) {
   return <div className="step-heading"><div className="step-heading-icon">{icon}</div><div><h2>{item.title}</h2><p>{item.subtitle}</p></div></div>;
 }
@@ -237,8 +338,8 @@ function EmptyState({ title, body, action, href }: { title: string; body: string
 function NotFound() { return <main className="page"><div className="panel empty-state"><div className="empty-art"><Compass size={30} /></div><h3>This path is still being mapped.</h3><p>That page does not exist in AlgoCourse yet.</p><Link className="btn btn-primary" href="/" data-testid="link-not-found-home">Return to Today</Link></div></main>; }
 
 function Router() {
-  const { progress, setStatus, toggleBookmark } = useProgress();
-  return <Shell progress={progress}><ErrorBoundary resetKey={location.pathname}><Switch><Route path="/" component={() => <Home progress={progress} setStatus={setStatus} />} /><Route path="/problems" component={() => <Library progress={progress} toggleBookmark={toggleBookmark} />} /><Route path="/patterns" component={() => <PatternsPage progress={progress} />} /><Route path="/learn/:slug" component={() => <Lesson progress={progress} setStatus={setStatus} toggleBookmark={toggleBookmark} />} /><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
+  const { progress, setStatus, toggleBookmark, session, authReady, syncState, signInWithGoogle, signOut } = useProgress();
+  return <Shell progress={progress} auth={{ session, authReady, syncState, signInWithGoogle, signOut }}><ErrorBoundary resetKey={location.pathname}><Switch><Route path="/" component={() => <Home progress={progress} setStatus={setStatus} />} /><Route path="/problems" component={() => <Library progress={progress} toggleBookmark={toggleBookmark} />} /><Route path="/patterns" component={() => <PatternsPage progress={progress} />} /><Route path="/learn/:slug" component={() => <Lesson progress={progress} setStatus={setStatus} toggleBookmark={toggleBookmark} />} /><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
 }
 
 function App() {
