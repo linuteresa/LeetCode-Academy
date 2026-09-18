@@ -38,7 +38,8 @@ export type Interviewer = {
   /** Whether replies are generated or drawn from the lesson's own material. */
   scripted: boolean;
   start(problem: Problem): Session;
-  reply(problem: Problem, session: Session, answer: Answer): Session;
+  /** Async because a hosted interviewer answers over the network. */
+  reply(problem: Problem, session: Session, answer: Answer): Promise<Session>;
 };
 
 const say = (session: Session, text: string): Turn[] => [...session.transcript, { from: 'interviewer' as const, text }];
@@ -102,7 +103,7 @@ export const scriptedInterviewer: Interviewer = {
     };
   },
 
-  reply(problem, session, answer) {
+  async reply(problem, session, answer) {
     const checks = intuitionChecksFor(problem);
     const withCandidate: Session = answer.text
       ? { ...session, transcript: [...session.transcript, { from: 'candidate', text: answer.text }] }
@@ -221,4 +222,126 @@ export const scriptedInterviewer: Interviewer = {
 
 export function leetcodeUrl(problem: Problem): string {
   return `https://leetcode.com/problems/${problem.slug}/`;
+}
+
+/**
+ * Where the hosted interviewer lives, if one is configured.
+ *
+ * Read defensively: `import.meta.env` is injected by Vite and is absent when
+ * this module is imported by the test runner.
+ */
+const env = (import.meta as ImportMeta & { env?: ImportMetaEnv }).env;
+export const interviewEndpoint = env?.VITE_INTERVIEW_ENDPOINT?.trim() || null;
+
+export type RemoteReply = { reply: string; done?: boolean };
+
+/** Bounds on a conversation, so a runaway session cannot become a bill. */
+export const MAX_TURNS = 40;
+export const MAX_MESSAGE_CHARS = 2000;
+
+export function isRemoteReply(value: unknown): value is RemoteReply {
+  return typeof value === 'object' && value !== null && typeof (value as RemoteReply).reply === 'string';
+}
+
+/**
+ * An interviewer backed by a model behind a Supabase Edge Function.
+ *
+ * The page never holds the model key. It sends the conversation to the
+ * function, which verifies the caller's Supabase session and adds the key
+ * server-side, so an unauthenticated visitor never reaches the model at all.
+ */
+export function createRemoteInterviewer(
+  endpoint: string,
+  getToken: () => Promise<string | null>,
+): Interviewer {
+  return {
+    id: 'remote',
+    label: 'AI interviewer',
+    scripted: false,
+
+    start(problem) {
+      return {
+        slug: problem.slug,
+        transcript: [
+          { from: 'interviewer', text: `Let's work through ${problem.title}. ${problem.prompt}` },
+          { from: 'interviewer', text: 'Talk me through how you would approach this — what do you notice, and what are you optimising for?' },
+        ],
+        awaiting: 'text',
+        choices: [],
+        stage: 0,
+        missteps: 0,
+        cleared: false,
+      };
+    },
+
+    async reply(problem, session, answer) {
+      const text = (answer.text ?? '').slice(0, MAX_MESSAGE_CHARS);
+      const withCandidate: Session = {
+        ...session,
+        transcript: [...session.transcript, { from: 'candidate', text }],
+      };
+
+      if (withCandidate.transcript.length > MAX_TURNS) {
+        return {
+          ...withCandidate,
+          transcript: [
+            ...withCandidate.transcript,
+            { from: 'interviewer', text: 'We have gone long — let us call it here. Write up your approach and see how it holds.' },
+          ],
+          awaiting: 'done',
+          cleared: true,
+        };
+      }
+
+      const token = await getToken();
+      if (!token) {
+        return {
+          ...withCandidate,
+          transcript: [
+            ...withCandidate.transcript,
+            { from: 'interviewer', text: 'Sign in to use the AI interviewer — it runs on your account so it cannot be abused by anonymous visitors. The scripted questions work without signing in.' },
+          ],
+          awaiting: 'text',
+        };
+      }
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            problem: {
+              title: problem.title,
+              prompt: problem.prompt,
+              pattern: problem.pattern,
+              difficulty: problem.difficulty,
+              complexity: problem.complexity,
+            },
+            transcript: withCandidate.transcript.slice(-MAX_TURNS),
+          }),
+        });
+
+        if (!response.ok) throw new Error(`interview endpoint returned ${response.status}`);
+        const data: unknown = await response.json();
+        if (!isRemoteReply(data)) throw new Error('unexpected interview response');
+
+        return {
+          ...withCandidate,
+          transcript: [...withCandidate.transcript, { from: 'interviewer', text: data.reply }],
+          awaiting: data.done ? 'done' : 'text',
+          cleared: Boolean(data.done),
+        };
+      } catch {
+        // A failed call must not strand the session; the conversation continues.
+        return {
+          ...withCandidate,
+          transcript: [
+            ...withCandidate.transcript,
+            { from: 'interviewer', text: 'I could not reach the interviewer just then. Try that again, or switch to the scripted questions.' },
+          ],
+          awaiting: 'text',
+        };
+      }
+    },
+  };
 }
