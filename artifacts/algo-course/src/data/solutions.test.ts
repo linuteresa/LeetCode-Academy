@@ -7,6 +7,7 @@
  * Run with `pnpm --filter @workspace/algo-course test`.
  */
 import { neetcode150 } from './neetcode150';
+import { intuitionChecksFor, patternTeaching, patterns, problems } from './problems';
 
 let failures = 0;
 const check = (label: string, actual: unknown, expected: unknown) => {
@@ -74,6 +75,45 @@ check('course schedule, cyclic', run('course-schedule', 'canFinish', 2, [[1, 0],
 check('median of two sorted arrays', run('median-of-two-sorted-arrays', 'findMedianSortedArrays', [1, 3], [2]), 2);
 check('reverse integer overflow', run('reverse-integer', 'reverse', 1534236469), 0);
 check('spiral matrix', run('spiral-matrix', 'spiralOrder', [[1, 2, 3], [4, 5, 6], [7, 8, 9]]), [1, 2, 3, 6, 9, 8, 7, 4, 5]);
+
+// 3. Lesson integrity: a lesson must point at a real problem, and every part
+// the lesson UI renders must actually be there.
+const lessons = problems.filter((p) => p.lessonReady);
+const badCheckpoint = lessons.filter((p) => {
+  const c = p.checkpoint;
+  return !c || c.choices.length < 2 || c.answer < 0 || c.answer >= c.choices.length;
+});
+const badSteps = lessons.filter((p) => (p.steps?.length ?? 0) !== 4);
+const noHints = lessons.filter((p) => (p.hints?.length ?? 0) === 0);
+const emptyBody = lessons.filter((p) => p.steps?.some((s) => (s.kind === 'concept' || s.kind === 'visual') && !s.body?.trim()));
+
+check('every checkpoint answer is a valid choice', badCheckpoint.map((p) => p.slug), []);
+check('every lesson has four steps', badSteps.map((p) => p.slug), []);
+check('every lesson has hints', noHints.map((p) => p.slug), []);
+check('concept and visual steps have a body', emptyBody.map((p) => p.slug), []);
+
+// The checkpoint step shows three intuition checks; a pattern with no authored
+// checks would silently render one.
+const thinChecks = lessons.filter((p) => intuitionChecksFor(p).length !== 3);
+check('every lesson gets three intuition checks', thinChecks.map((p) => p.slug), []);
+
+// Every pattern should be teachable, or the pattern map advertises a dead end.
+const uncovered = patterns.filter((pattern) => !lessons.some((p) => p.pattern === pattern));
+check('every pattern has at least one lesson', uncovered, []);
+check('every problem has a guided lesson', neetcode150.filter((c) => !lessons.some((l) => l.slug === c.slug)).map((c) => c.slug), []);
+check('lesson count', lessons.length, 150);
+
+// Lessons are per-problem teaching, so near-identical prose is a smell.
+const conceptBodies = lessons.map((p) => p.steps?.find((s) => s.kind === 'concept')?.body ?? '');
+const duplicateConcepts = conceptBodies.filter((b, i) => conceptBodies.indexOf(b) !== i);
+check('no two lessons share a concept body', duplicateConcepts, []);
+const shortConcepts = lessons.filter((p) => (p.steps?.find((s) => s.kind === 'concept')?.body?.length ?? 0) < 120);
+check('concept bodies are substantive', shortConcepts.map((p) => p.slug), []);
+
+// A pattern without its own teaching entry silently renders the generic
+// sliding-window-shaped visual, which is what this app is meant not to do.
+const generic = [...new Set(lessons.map((p) => p.pattern))].filter((pattern) => !patternTeaching[pattern]);
+check('no lesson falls back to the generic visual', generic, []);
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);
