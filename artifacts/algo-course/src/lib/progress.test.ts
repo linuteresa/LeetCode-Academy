@@ -15,6 +15,8 @@ import {
   normalizeProgress,
   reconcile,
   registerActivity,
+  noteKey,
+  setNoteAt,
   setStatusAt,
   statusKey,
   toggleBookmarkAt,
@@ -123,6 +125,38 @@ check('status and bookmark keys differ', statusKey('x') === bookmarkKey('x'), fa
 
 // An empty anonymous device just takes the server row.
 check('empty device takes the row', chooseProgress(emptyProgress, bRow, B).statuses, { 'valid-anagram': 'in-progress' });
+
+// --- Notes --------------------------------------------------------------
+let n = setNoteAt(emptyProgress, 'two-sum', 'forgot the complement trick', 100);
+check('a note is stored', n.notes['two-sum'], 'forgot the complement trick');
+check('a note is timestamped', n.updatedAt[noteKey('two-sum')], 100);
+check('a note counts as work', hasWork(n), true);
+
+// Clearing removes the note but keeps a stamp, so the removal can win a merge.
+const cleared = setNoteAt(n, 'two-sum', '   ', 200);
+check('a blank note is removed', cleared.notes['two-sum'], undefined);
+check('the removal is timestamped', cleared.updatedAt[noteKey('two-sum')], 200);
+
+// Newest note wins, from whichever side.
+const mine = setNoteAt(p({ ownerId: A }), 'two-sum', 'local version', 300);
+const theirs = setNoteAt(emptyProgress, 'two-sum', 'server version', 100);
+check('a newer local note wins', chooseProgress(mine, theirs, A).notes['two-sum'], 'local version');
+const stale = setNoteAt(p({ ownerId: A }), 'two-sum', 'old local', 100);
+const fresher = setNoteAt(emptyProgress, 'two-sum', 'newer server', 400);
+check('a newer server note wins', chooseProgress(stale, fresher, A).notes['two-sum'], 'newer server');
+
+// A deletion must not be undone by the other side's older copy.
+const deletedLate = setNoteAt(setNoteAt(p({ ownerId: A }), 'two-sum', 'draft', 100), 'two-sum', '', 500);
+const serverHasOld = setNoteAt(emptyProgress, 'two-sum', 'draft', 100);
+check('a deleted note stays deleted', chooseProgress(deletedLate, serverHasOld, A).notes['two-sum'], undefined);
+
+// Notes belong to their owner, like everything else.
+const withNote = setNoteAt(p({ ownerId: A }), 'two-sum', 'private thought', 100);
+check("B does not inherit A's notes", chooseProgress(withNote, null, B).notes, {});
+
+// Malformed stored notes are coerced, not trusted.
+const junkNotes = normalizeProgress({ notes: { a: 42, b: 'real note', c: '   ' } });
+check('non-string notes are dropped', junkNotes.notes, { b: 'real note' });
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

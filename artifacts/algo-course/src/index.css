@@ -163,6 +163,23 @@ a { color: inherit; text-decoration: none; }
 .avatar { width: 34px; height: 34px; margin-left: 12px; display: grid; place-items: center; border-radius: 50%; background: var(--lavender); color: var(--violet-text); font-size: 12px; font-weight: 800; }
 
 /* Account / sign-in control */
+/* Solved toggle, shown in the library and on both problem modes */
+.solved-toggle { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--muted); font-size: 12.5px; font-weight: 700; transition: color .15s, background .15s, border-color .15s; }
+.solved-toggle:hover { color: var(--ink); border-color: var(--aqua-border); }
+.solved-toggle.solved { color: var(--green-text); background: var(--green-soft); border-color: var(--green-border); }
+.solved-toggle.compact { padding: 6px; border-radius: 50%; }
+.problem-row.is-solved .problem-title { text-decoration-color: var(--green-border); }
+.note-marker { margin-left: 7px; vertical-align: -1px; color: var(--muted); }
+
+/* Per-problem notes */
+.notes { margin-top: 18px; padding: 18px 20px; }
+.notes-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.notes-head h4 { display: flex; align-items: center; gap: 7px; margin: 0; font-family: 'Space Grotesk'; font-size: 14px; letter-spacing: -.02em; }
+.notes-state { opacity: 0; color: var(--green-text); font-size: 11px; font-weight: 700; transition: opacity .2s; }
+.notes-state.shown { opacity: 1; }
+.notes textarea { width: 100%; resize: vertical; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font-size: 13.5px; line-height: 1.65; font-family: inherit; }
+.notes textarea:focus { outline: 2px solid var(--aqua); outline-offset: 1px; }
+
 /* Learn / Practice switch */
 .mode-switch { display: inline-flex; gap: 4px; margin-top: 16px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); }
 .mode-switch a { display: inline-flex; align-items: center; gap: 6px; padding: 7px 15px; border-radius: 999px; color: var(--muted); font-size: 12.5px; font-weight: 700; }
@@ -310,7 +327,7 @@ a { color: inherit; text-decoration: none; }
 .filter-pill.active { color: var(--aqua-text); background: var(--aqua-soft); border-color: var(--aqua-border); }
 .result-meta { color: var(--muted); font-size: 12px; margin-bottom: 13px; }
 .problem-list { display: grid; gap: 10px; }
-.problem-row { display: grid; grid-template-columns: 52px minmax(200px,1.7fr) minmax(120px,.9fr) 75px 88px 38px; gap: 15px; align-items: center; padding: 16px 18px; transition: transform .2s, background .2s, border-color .2s; }
+.problem-row { display: grid; grid-template-columns: 34px 52px minmax(190px,1.7fr) minmax(120px,.9fr) 75px 88px 38px; gap: 13px; align-items: center; padding: 16px 18px; transition: transform .2s, background .2s, border-color .2s; }
 .problem-row:hover { transform: translateX(3px); border-color: var(--aqua-border); background: var(--surface-raised); }
 .problem-number { font-family: var(--app-font-mono); color: var(--muted); font-size: 11px; }
 .problem-title { font-family: 'Space Grotesk'; font-weight: 700; letter-spacing: -.025em; font-size: 15px; }
@@ -454,8 +471,10 @@ a { color: inherit; text-decoration: none; }
   .home-columns { grid-template-columns: 1fr; }
   .recent-list { grid-template-columns: 1fr; }
   .pattern-grid { grid-template-columns: 1fr; }
-  .problem-row { grid-template-columns: 35px minmax(0,1fr) 34px; gap: 9px; padding: 14px; }
-  .problem-row > :nth-child(3), .problem-row > :nth-child(4), .problem-row > :nth-child(5) { display: none; }
+  /* Children are: solved toggle, number, link, tag, time, status, bookmark.
+     On narrow screens keep the toggle, the title and the bookmark. */
+  .problem-row { grid-template-columns: 32px 34px minmax(0,1fr) 34px; gap: 9px; padding: 14px; }
+  .problem-row > :nth-child(4), .problem-row > :nth-child(5), .problem-row > :nth-child(6) { display: none; }
   .lesson-shell { padding: 20px 16px 90px; }
   .lesson-layout { display: block; }
   .lesson-side { position: static; overflow-x: auto; margin-bottom: 24px; }

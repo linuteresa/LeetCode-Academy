@@ -11,6 +11,7 @@ by one side overwriting the other.
 
 - `s:<slug>` — when this problem's status last changed
 - `b:<slug>` — when this problem's bookmark was last toggled
+- `n:<slug>` — when this problem's note was last written or cleared
 
 `reconcile()` walks the union of both sides and keeps the newer decision for
 each key independently. That is what lets a deliberate un-complete or
@@ -23,8 +24,11 @@ undone work; "server wins" throws away edits that have not been uploaded yet.
 ## Where the timestamps are stored
 
 The `progress` table has `statuses jsonb`, `bookmarks jsonb`, `streak`,
-`last_slug` and `updated_at`. Because `bookmarks` is `jsonb`, the clock rides
-inside it as `{ list: string[], at: ChangeClock }` and needs no extra column.
+`last_slug` and `updated_at`. Because `bookmarks` is `jsonb`, the clock and the
+per-problem notes ride inside it as
+`{ list: string[], at: ChangeClock, notes: Record<string, string> }` and need no
+extra column. The column name is now narrower than what it holds; renaming it is
+a migration for the same day the ones below are applied.
 Rows written before this change stored a plain `string[]`; those load with an
 empty clock and lose to anything timestamped, which is the correct outcome.
 
@@ -36,7 +40,10 @@ one needs a migration that has not been applied:
 ```sql
 alter table public.progress
   add column recent jsonb not null default '[]'::jsonb,
-  add column last_active_date date;
+  add column last_active_date date,
+  -- Optional tidy-up: give notes their own column rather than riding in
+  -- `bookmarks`, and rename that column to match what it actually holds.
+  add column notes jsonb not null default '{}'::jsonb;
 ```
 
 Until then:

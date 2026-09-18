@@ -10,6 +10,7 @@ import {
   normalizeProgress,
   readLocalProgress,
   registerActivity,
+  setNoteAt,
   setStatusAt,
   toggleBookmarkAt,
   writeLocalProgress,
@@ -23,7 +24,7 @@ import {
  */
 type ProgressRow = {
   statuses: Record<string, ProblemStatus> | null;
-  bookmarks: string[] | { list?: string[]; at?: ChangeClock } | null;
+  bookmarks: string[] | { list?: string[]; at?: ChangeClock; notes?: Record<string, string> } | null;
   streak: number | null;
   last_slug: string | null;
 };
@@ -37,10 +38,12 @@ function rowToProgress(row: ProgressRow): Persisted {
   // entries simply carry no clock and lose to anything newer.
   const bookmarks = Array.isArray(row.bookmarks) ? row.bookmarks : (row.bookmarks?.list ?? []);
   const updatedAt = Array.isArray(row.bookmarks) ? {} : (row.bookmarks?.at ?? {});
+  const notes = Array.isArray(row.bookmarks) ? {} : (row.bookmarks?.notes ?? {});
 
   return normalizeProgress({
     statuses: row.statuses ?? {},
     bookmarks,
+    notes,
     updatedAt,
     streak: row.streak ?? 0,
     lastSlug: row.last_slug ?? undefined,
@@ -136,7 +139,9 @@ export function useProgress() {
         {
           user_id: userId,
           statuses: progress.statuses,
-          bookmarks: { list: progress.bookmarks, at: progress.updatedAt },
+          // `bookmarks` is jsonb, so the clock and the notes ride inside it
+          // and need no extra column. See SYNC.md.
+          bookmarks: { list: progress.bookmarks, at: progress.updatedAt, notes: progress.notes },
           streak: progress.streak,
           last_slug: progress.lastSlug ?? null,
         },
@@ -152,6 +157,17 @@ export function useProgress() {
 
   const setStatus = useCallback((slug: string, status: ProblemStatus) => {
     setProgress((p) => registerActivity(noteRecent(setStatusAt(p, slug, status), slug)));
+  }, []);
+
+  /** Flip a problem between solved and in progress. */
+  const toggleSolved = useCallback((slug: string, solved: boolean) => {
+    setProgress((p) =>
+      registerActivity(noteRecent(setStatusAt(p, slug, solved ? 'completed' : 'in-progress'), slug)),
+    );
+  }, []);
+
+  const setNote = useCallback((slug: string, text: string) => {
+    setProgress((p) => setNoteAt(p, slug, text));
   }, []);
 
   const toggleBookmark = useCallback((slug: string) => {
@@ -194,6 +210,8 @@ export function useProgress() {
   return {
     progress,
     setStatus,
+    toggleSolved,
+    setNote,
     toggleBookmark,
     visit,
     session,

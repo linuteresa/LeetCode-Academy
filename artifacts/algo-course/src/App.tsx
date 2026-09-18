@@ -4,7 +4,7 @@ import { Link, Route, Router as WouterRouter, Switch, useLocation, useParams } f
 import {
   ArrowLeft, ArrowRight, BarChart3, Bookmark, BookOpen, BrainCircuit, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Code2, Compass, Flame, GitBranch,
-  AlertTriangle, ExternalLink, Grid2X2, Layers3, Lightbulb, ListFilter, LogIn, LogOut, Menu, Moon, Network, Play, RefreshCw, RotateCcw, Search, Sun,
+  AlertTriangle, ExternalLink, Grid2X2, Layers3, Lightbulb, ListFilter, LogIn, LogOut, Menu, Moon, Network, NotebookPen, Play, RefreshCw, RotateCcw, Search, Sun,
   Sparkles, Target, Timer, Trophy, X, Zap,
 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -17,6 +17,7 @@ import type { Persisted } from '@/lib/progress';
 import type { Session } from '@supabase/supabase-js';
 import { applyTheme, storeTheme, storedTheme, systemTheme, type ThemePreference } from '@/lib/theme';
 import { InterviewPanel } from '@/components/interview-panel';
+import { ProblemNotes } from '@/components/problem-notes';
 
 const queryClient = new QueryClient();
 
@@ -236,7 +237,7 @@ function Home({ progress, setStatus }: { progress: Persisted; setStatus: (slug: 
   );
 }
 
-function Library({ progress, toggleBookmark, storageLabel }: { progress: Persisted; toggleBookmark: (slug: string) => void; storageLabel: string }) {
+function Library({ progress, toggleBookmark, toggleSolved, storageLabel }: { progress: Persisted; toggleBookmark: (slug: string) => void; toggleSolved: (slug: string, solved: boolean) => void; storageLabel: string }) {
   const [query, setQuery] = useState('');
   const [pattern, setPattern] = useState('All patterns');
   const [status, setStatus] = useState('All status');
@@ -265,9 +266,10 @@ function Library({ progress, toggleBookmark, storageLabel }: { progress: Persist
       <div className="result-meta"><ListFilter size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />{filtered.length} of {problems.length} problems · NeetCode 150 · {storageLabel}</div>
       {filtered.length ? <div className="problem-list stagger">{filtered.map((problem) => {
         const currentStatus = statusOf(problem, progress);
-        return <div className="panel problem-row" key={problem.slug} data-testid={`row-problem-${problem.slug}`}>
+        return <div className={`panel problem-row ${currentStatus === 'completed' ? 'is-solved' : ''}`} key={problem.slug} data-testid={`row-problem-${problem.slug}`}>
+          <SolvedToggle problem={problem} progress={progress} toggleSolved={toggleSolved} compact />
           <span className="problem-number">#{problem.number}</span>
-          <Link href={`/learn/${problem.slug}`} data-testid={`link-problem-${problem.slug}`}><div className="problem-title">{problem.title}</div><div className="problem-summary">{problem.summary}</div></Link>
+          <Link href={`/learn/${problem.slug}`} data-testid={`link-problem-${problem.slug}`}><div className="problem-title">{problem.title}{progress.notes[problem.slug] ? <NotebookPen size={12} className="note-marker" aria-label="Has notes" /> : null}</div><div className="problem-summary">{problem.summary}</div></Link>
           <span className="tag">{problem.pattern}</span>
           <span className="time"><Clock3 size={13} /> {problem.estimatedMinutes}m</span>
           <span className="status-text"><i className={`status-dot ${currentStatus === 'completed' ? 'completed' : currentStatus === 'in-progress' ? 'started' : ''}`} />{currentStatus === 'completed' ? 'Complete' : currentStatus === 'in-progress' ? 'In progress' : 'Not started'}</span>
@@ -284,7 +286,7 @@ function PatternsPage({ progress }: { progress: Persisted }) {
   return <main className="page"><div className="eyebrow">The map behind the questions</div><h1 className="display page-title">Patterns make<br /><span style={{ color: 'var(--coral)' }}>memory stick.</span></h1><p className="page-subtitle">Interview problems look infinite until you learn the handful of moves they keep remixing. Your progress, organized by instinct.</p><div className="pattern-grid stagger">{patterns.map((pattern, index) => { const related = problems.filter((p) => p.pattern === pattern); const done = related.filter((p) => statusOf(p, progress) === 'completed').length; const Icon = icons[index]; return <div className="panel pattern-card" key={pattern} data-testid={`card-pattern-${pattern.toLowerCase().replaceAll(' ', '-')}`}><span className="pattern-count">{done}/{related.length || 0}</span><div className="pattern-icon"><Icon size={17} /></div><h3>{pattern}</h3><p>{descriptions[pattern]}</p><div className="progress-track"><div className="progress-fill" style={{ width: `${related.length ? done / related.length * 100 : 0}%` }} /></div></div>; })}</div><div className="panel" style={{ marginTop: 30, padding: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, background: '#202d36', color: 'white' }}><div><div className="eyebrow" style={{ color: '#8edbd3' }}>A good next move</div><h2 style={{ fontFamily: 'Space Grotesk', letterSpacing: '-.04em', margin: '8px 0 5px' }}>Complete one problem in an unvisited pattern.</h2><p style={{ color: '#b5c9c6', margin: 0, fontSize: 12 }}>Breadth builds recognition faster than perfection.</p></div><Link href="/problems" className="btn btn-primary" data-testid="button-pattern-challenge">Find one <ArrowRight size={15} /></Link></div></main>;
 }
 
-function Lesson({ progress, setStatus, toggleBookmark, visit }: { progress: Persisted; setStatus: (slug: string, status: ProblemStatus) => void; toggleBookmark: (slug: string) => void; visit: (slug: string) => void }) {
+function Lesson({ progress, setStatus, toggleSolved, setNote, toggleBookmark, visit }: { progress: Persisted; setStatus: (slug: string, status: ProblemStatus) => void; toggleSolved: (slug: string, solved: boolean) => void; setNote: (slug: string, text: string) => void; toggleBookmark: (slug: string) => void; visit: (slug: string) => void }) {
   const { slug } = useParams<{ slug: string }>();
   const [, setLocation] = useLocation();
   const problem = problems.find((item) => item.slug === slug);
@@ -320,12 +322,13 @@ function Lesson({ progress, setStatus, toggleBookmark, visit }: { progress: Pers
     else setStatus(problem.slug, 'completed');
   };
   return <main className="lesson-shell">
-    <div className="lesson-top"><Link href="/problems" className="back-link" data-testid="link-back-library"><ArrowLeft size={15} /> Back to library</Link><div className="lesson-progress"><span>Lesson {Math.min(step + 1, 4)} of 4</span><div className="progress-track"><div className="progress-fill" style={{ width: `${isCompleted ? 100 : (step / 4) * 100}%` }} /></div><button className={`icon-button ${progress.bookmarks.includes(problem.slug) ? 'bookmarked' : ''}`} onClick={() => toggleBookmark(problem.slug)} aria-label={progress.bookmarks.includes(problem.slug) ? 'Remove bookmark' : 'Bookmark lesson'} data-testid="button-bookmark-lesson"><Bookmark size={17} fill={progress.bookmarks.includes(problem.slug) ? 'currentColor' : 'none'} /></button></div></div>
+    <div className="lesson-top"><Link href="/problems" className="back-link" data-testid="link-back-library"><ArrowLeft size={15} /> Back to library</Link><div className="lesson-progress"><SolvedToggle problem={problem} progress={progress} toggleSolved={toggleSolved} /><span>Lesson {Math.min(step + 1, 4)} of 4</span><div className="progress-track"><div className="progress-fill" style={{ width: `${isCompleted ? 100 : (step / 4) * 100}%` }} /></div><button className={`icon-button ${progress.bookmarks.includes(problem.slug) ? 'bookmarked' : ''}`} onClick={() => toggleBookmark(problem.slug)} aria-label={progress.bookmarks.includes(problem.slug) ? 'Remove bookmark' : 'Bookmark lesson'} data-testid="button-bookmark-lesson"><Bookmark size={17} fill={progress.bookmarks.includes(problem.slug) ? 'currentColor' : 'none'} /></button></div></div>
     <div className="lesson-layout">
       <aside className="lesson-side"><h4>{problem.pattern}</h4><div className="step-nav">{steps.map((item, index) => { const locked = index > 2 && !allChecksCorrect && !isDone; return <button className={`step-button ${step === index ? 'active' : ''} ${index < step || isDone ? 'done' : ''} ${locked ? 'locked' : ''}`} disabled={locked} aria-disabled={locked} title={locked ? 'Pass the checkpoint first' : undefined} aria-label={`Step ${index + 1}: ${item.title}${locked ? ' (locked)' : ''}`} onClick={() => { if (!locked) setStep(index); }} key={item.kind} data-testid={`button-step-${index + 1}`}><span className="step-number">{index < step || isDone ? <Check size={12} /> : index + 1}</span><span>{item.title}</span></button>; })}</div><div style={{ marginTop: 25, padding: 13, background: 'var(--gold-soft)', borderRadius: 12, color: 'var(--gold-text)', fontSize: 11, lineHeight: 1.55 }}><Sparkles size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} /> Stay curious. The pattern is the win.</div></aside>
       <section className="lesson-main">
         <div className="lesson-header"><div className="eyebrow">{problem.number} · {problem.pattern} · {problem.difficulty.toLowerCase()}</div><h1 className="display">{problem.title}</h1><p>{problem.summary}</p><ModeSwitch slug={problem.slug} mode="learn" /><ProblemStatement problem={problem} /></div>
         {isDone ? <div className="complete-card"><div className="complete-icon"><Trophy size={31} /></div><h2>Pattern added to your toolkit.</h2><p>You completed this guided lesson. The next time this shape appears, you’ll have a place to start.</p><div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}><button className="btn btn-secondary" onClick={() => { setStep(0); setCheckAnswers([]); setReviewing(true); }} data-testid="button-review-lesson"><RotateCcw size={14} /> Review lesson</button><Link href="/problems" className="btn btn-primary" data-testid="button-next-problem">Choose another <ArrowRight size={14} /></Link></div></div> : <LessonStepContent problem={problem} step={step} intuitionChecks={intuitionChecks} checkAnswers={checkAnswers} setCheckAnswer={chooseCheckAnswer} showHints={showHints} setShowHints={setShowHints} codeTab={codeTab} setCodeTab={setCodeTab} />}
+        <ProblemNotes slug={problem.slug} note={progress.notes[problem.slug] ?? ''} setNote={setNote} />
          {!isDone && <div className="lesson-actions"><button className="btn btn-secondary" disabled={step === 0} style={{ opacity: step === 0 ? .45 : 1 }} onClick={() => setStep((value) => value - 1)} data-testid="button-previous-step"><ArrowLeft size={14} /> Previous</button><button className="btn btn-primary" disabled={step === 2 && !allChecksCorrect} onClick={next} data-testid="button-next-step">{step === steps.length - 1 ? 'Complete lesson' : 'Next step'} <ArrowRight size={14} /></button></div>}
       </section>
       <aside className="lesson-right" id="lesson-hints"><div className="panel lesson-right-card"><h4>Hints, when useful</h4>{hints.map((hint, index) => <div className="hint" key={hint}><button onClick={() => setShowHints((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index])} data-testid={`button-hint-${index + 1}`}><span>Hint {index + 1}</span>{showHints.includes(index) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>{showHints.includes(index) && <p>{hint}</p>}</div>)}</div><div className="panel lesson-right-card" style={{ marginTop: 14, background: 'var(--violet-soft)', borderColor: 'var(--violet-border)' }}><CircleHelp size={17} color="#5b568d" /><p style={{ color: 'var(--violet-text)', fontSize: 11, lineHeight: 1.6, marginBottom: 0 }}>You can revisit any step from the rail. Understanding beats speed here.</p></div></aside>
@@ -409,7 +412,7 @@ function ModeSwitch({ slug, mode }: { slug: string; mode: 'learn' | 'practice' }
   </div>;
 }
 
-function Practice({ progress, setStatus, toggleBookmark, visit }: { progress: Persisted; setStatus: (slug: string, status: ProblemStatus) => void; toggleBookmark: (slug: string) => void; visit: (slug: string) => void }) {
+function Practice({ progress, setStatus, toggleSolved, setNote, toggleBookmark, visit }: { progress: Persisted; setStatus: (slug: string, status: ProblemStatus) => void; toggleSolved: (slug: string, solved: boolean) => void; setNote: (slug: string, text: string) => void; toggleBookmark: (slug: string) => void; visit: (slug: string) => void }) {
   const { slug } = useParams<{ slug: string }>();
   const problem = problems.find((item) => item.slug === slug);
   const currentStatus = problem ? statusOf(problem, progress) : 'not-started';
@@ -426,6 +429,7 @@ function Practice({ progress, setStatus, toggleBookmark, visit }: { progress: Pe
     <div className="lesson-top">
       <Link href="/problems" className="back-link" data-testid="link-back-library"><ArrowLeft size={15} /> Back to library</Link>
       <div className="lesson-progress">
+        <SolvedToggle problem={problem} progress={progress} toggleSolved={toggleSolved} />
         <button className={`icon-button ${progress.bookmarks.includes(problem.slug) ? 'bookmarked' : ''}`} onClick={() => toggleBookmark(problem.slug)} aria-label={progress.bookmarks.includes(problem.slug) ? 'Remove bookmark' : 'Bookmark problem'} data-testid="button-bookmark-lesson">
           <Bookmark size={17} fill={progress.bookmarks.includes(problem.slug) ? 'currentColor' : 'none'} />
         </button>
@@ -441,9 +445,7 @@ function Practice({ progress, setStatus, toggleBookmark, visit }: { progress: Pe
           <ProblemStatement problem={problem} />
         </div>
         <InterviewPanel problem={problem} />
-        {currentStatus !== 'completed' && <div className="lesson-actions">
-          <button className="btn btn-secondary" onClick={() => setStatus(problem.slug, 'completed')} data-testid="button-mark-complete"><CheckCircle2 size={14} /> Mark as solved</button>
-        </div>}
+        <ProblemNotes slug={problem.slug} note={progress.notes[problem.slug] ?? ''} setNote={setNote} />
       </section>
     </div>
   </main>;
@@ -453,6 +455,22 @@ function Practice({ progress, setStatus, toggleBookmark, visit }: { progress: Pe
  * The full statement, with worked examples and input bounds. Falls back to the
  * one-line prompt for any problem whose long form is not written yet.
  */
+/** Toggle a problem between solved and unsolved from anywhere it appears. */
+function SolvedToggle({ problem, progress, toggleSolved, compact }: { problem: Problem; progress: Persisted; toggleSolved: (slug: string, solved: boolean) => void; compact?: boolean }) {
+  const solved = statusOf(problem, progress) === 'completed';
+  return <button
+    className={`solved-toggle ${solved ? 'solved' : ''} ${compact ? 'compact' : ''}`}
+    role="switch"
+    aria-checked={solved}
+    aria-label={solved ? `Mark ${problem.title} as unsolved` : `Mark ${problem.title} as solved`}
+    title={solved ? 'Solved — click to undo' : 'Mark as solved'}
+    onClick={() => toggleSolved(problem.slug, !solved)}
+    data-testid={`button-solved-${problem.slug}`}
+  >
+    <CheckCircle2 size={compact ? 16 : 15} />{compact ? null : <span>{solved ? 'Solved' : 'Mark solved'}</span>}
+  </button>;
+}
+
 function ProblemStatement({ problem }: { problem: Problem }) {
   const paragraphs = problem.statement?.length ? problem.statement : [problem.prompt];
   return <div className="problem-statement" data-testid="text-problem-statement">
@@ -503,8 +521,8 @@ function NotFound() { return <main className="page"><div className="panel empty-
  * state and re-running mount effects in a loop.
  */
 function Router() {
-  const { progress, setStatus, toggleBookmark, visit, session, authReady, syncState, signInWithGoogle, signOut } = useProgress();
-  return <Shell progress={progress} auth={{ session, authReady, syncState, signInWithGoogle, signOut }}><ErrorBoundary resetKey={location.pathname}><Switch><Route path="/"><Home progress={progress} setStatus={setStatus} /></Route><Route path="/problems"><Library progress={progress} toggleBookmark={toggleBookmark} storageLabel={storageLabels[syncState]} /></Route><Route path="/patterns"><PatternsPage progress={progress} /></Route><Route path="/learn/:slug"><Lesson progress={progress} setStatus={setStatus} toggleBookmark={toggleBookmark} visit={visit} /></Route><Route path="/practice/:slug"><Practice progress={progress} setStatus={setStatus} toggleBookmark={toggleBookmark} visit={visit} /></Route><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
+  const { progress, setStatus, toggleSolved, setNote, toggleBookmark, visit, session, authReady, syncState, signInWithGoogle, signOut } = useProgress();
+  return <Shell progress={progress} auth={{ session, authReady, syncState, signInWithGoogle, signOut }}><ErrorBoundary resetKey={location.pathname}><Switch><Route path="/"><Home progress={progress} setStatus={setStatus} /></Route><Route path="/problems"><Library progress={progress} toggleBookmark={toggleBookmark} toggleSolved={toggleSolved} storageLabel={storageLabels[syncState]} /></Route><Route path="/patterns"><PatternsPage progress={progress} /></Route><Route path="/learn/:slug"><Lesson progress={progress} setStatus={setStatus} toggleSolved={toggleSolved} setNote={setNote} toggleBookmark={toggleBookmark} visit={visit} /></Route><Route path="/practice/:slug"><Practice progress={progress} setStatus={setStatus} toggleSolved={toggleSolved} setNote={setNote} toggleBookmark={toggleBookmark} visit={visit} /></Route><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
 }
 
 function App() {

@@ -9,10 +9,13 @@ export type ChangeClock = Record<string, number>;
 
 export const statusKey = (slug: string) => `s:${slug}`;
 export const bookmarkKey = (slug: string) => `b:${slug}`;
+export const noteKey = (slug: string) => `n:${slug}`;
 
 export type Persisted = {
   statuses: Record<string, ProblemStatus>;
   bookmarks: string[];
+  /** Free-text notes per problem. An empty note is removed rather than stored. */
+  notes: Record<string, string>;
   lastSlug?: string;
   streak: number;
   /**
@@ -35,6 +38,7 @@ export const RECENT_LIMIT = 8;
 export const emptyProgress: Persisted = {
   statuses: {},
   bookmarks: [],
+  notes: {},
   streak: 0,
   ownerId: null,
   recent: [],
@@ -76,6 +80,14 @@ export function normalizeProgress(raw: unknown): Persisted {
     }
   }
 
+  const notes: Record<string, string> = {};
+  const rawNotes = input.notes;
+  if (rawNotes && typeof rawNotes === 'object' && !Array.isArray(rawNotes)) {
+    for (const [slug, value] of Object.entries(rawNotes as Record<string, unknown>)) {
+      if (typeof value === 'string' && value.trim()) notes[slug] = value;
+    }
+  }
+
   const recent = Array.isArray(input.recent)
     ? [...new Set(input.recent.filter((s): s is string => typeof s === 'string'))].slice(0, RECENT_LIMIT)
     : [];
@@ -83,6 +95,7 @@ export function normalizeProgress(raw: unknown): Persisted {
   return {
     statuses,
     bookmarks,
+    notes,
     updatedAt,
     recent,
     streak: typeof input.streak === 'number' && input.streak >= 0 ? input.streak : 0,
@@ -124,7 +137,11 @@ export function clearLocalProgress(): void {
 
 /** True when there is anything worth carrying into an account. */
 export function hasWork(progress: Persisted): boolean {
-  return Object.keys(progress.statuses).length > 0 || progress.bookmarks.length > 0;
+  return (
+    Object.keys(progress.statuses).length > 0 ||
+    progress.bookmarks.length > 0 ||
+    Object.keys(progress.notes).length > 0
+  );
 }
 
 export function todayISO(now: Date = new Date()): string {
@@ -168,6 +185,28 @@ export function setStatusAt(
     statuses: { ...progress.statuses, [slug]: status },
     lastSlug: slug,
     updatedAt: { ...progress.updatedAt, [statusKey(slug)]: at },
+  };
+}
+
+/**
+ * Write a note, or clear it when the text is blank. Cleared notes are removed
+ * rather than stored empty, but keep a timestamp so the removal can win a
+ * reconcile instead of the old text coming back.
+ */
+export function setNoteAt(
+  progress: Persisted,
+  slug: string,
+  text: string,
+  at: number = Date.now(),
+): Persisted {
+  const notes = { ...progress.notes };
+  if (text.trim()) notes[slug] = text;
+  else delete notes[slug];
+
+  return {
+    ...progress,
+    notes,
+    updatedAt: { ...progress.updatedAt, [noteKey(slug)]: at },
   };
 }
 
@@ -219,6 +258,17 @@ export function reconcile(local: Persisted, remote: Persisted): Persisted {
     updatedAt[key] = Math.max(localAt, remoteAt);
   }
 
+  const notes: Record<string, string> = {};
+  for (const slug of new Set([...Object.keys(local.notes), ...Object.keys(remote.notes)])) {
+    const key = noteKey(slug);
+    const localAt = local.updatedAt[key] ?? 0;
+    const remoteAt = remote.updatedAt[key] ?? 0;
+    const winner = localAt >= remoteAt ? local : remote;
+    const text = winner.notes[slug];
+    if (text) notes[slug] = text;
+    updatedAt[key] = Math.max(localAt, remoteAt);
+  }
+
   const lastActiveDate =
     (local.lastActiveDate ?? '') >= (remote.lastActiveDate ?? '')
       ? local.lastActiveDate
@@ -227,6 +277,7 @@ export function reconcile(local: Persisted, remote: Persisted): Persisted {
   return {
     statuses,
     bookmarks,
+    notes,
     updatedAt,
     streak: Math.max(local.streak, remote.streak),
     lastSlug: local.lastSlug ?? remote.lastSlug,
