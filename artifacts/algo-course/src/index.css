@@ -214,6 +214,24 @@ a { color: inherit; text-decoration: none; }
 .choice.wrong { border-color: #e39a87; background: #ffe7df; color: #954e40; }
 .choice-dot { width: 15px; height: 15px; border: 1px solid currentColor; border-radius: 50%; flex: none; }
 .checkpoint-result { margin-top: 12px; font-size: 12px; font-weight: 700; }
+.intuition-intro { display: flex; justify-content: space-between; align-items: start; gap: 18px; margin: -3px 0 18px; }
+.intuition-intro h3 { margin: 6px 0 5px; font-family: 'Space Grotesk'; font-size: 21px; letter-spacing: -.04em; }
+.intuition-intro p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; max-width: 470px; }
+.intuition-score { flex: none; padding: 8px 10px; border-radius: 8px; background: #e0f3ef; color: var(--aqua-deep); font-size: 10px; }
+.intuition-rail { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 18px; }
+.intuition-step { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 9px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: rgba(255,255,255,.42); }
+.intuition-step > span { width: 22px; height: 22px; display: grid; place-items: center; flex: none; border: 1px solid var(--line); border-radius: 7px; font-family: var(--app-font-mono); font-size: 10px; }
+.intuition-step strong, .intuition-step small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intuition-step strong { color: var(--ink); font-size: 10px; }
+.intuition-step small { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.intuition-step.current { border-color: #a5d8d1; background: #e1f5f0; color: var(--aqua-deep); }
+.intuition-step.complete { border-color: #acd8d1; background: #eff8f1; }
+.intuition-step.complete > span { color: white; border-color: var(--aqua); background: var(--aqua); }
+.deep-check { background: #f0effa; }
+.deep-check h3 { max-width: 560px; }
+.practice-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.practice-header p { margin-top: 0; }
+.practice-header .btn { flex: none; white-space: nowrap; }
 .code-tabs { display: flex; gap: 4px; padding: 5px; border: 1px solid var(--line); background: #eeece3; border-radius: 10px; width: fit-content; margin-bottom: 15px; }
 .code-tab { border: 0; background: transparent; color: var(--muted); border-radius: 7px; padding: 8px 11px; font-family: var(--app-font-mono); font-size: 11px; }
 .code-tab.active { background: var(--card); color: var(--ink); box-shadow: 0 2px 8px rgba(0,0,0,.05); }
@@ -248,6 +266,11 @@ a { color: inherit; text-decoration: none; }
   .streak { margin-left: auto; }
   .avatar { margin-left: 7px; }
   .mobile-nav { display: flex; position: fixed; z-index: 30; bottom: 12px; left: 12px; right: 12px; justify-content: space-around; padding: 9px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,253,248,.94); box-shadow: 0 10px 35px rgba(20, 40, 40, .16); backdrop-filter: blur(16px); }
+  .intuition-intro, .practice-header { display: block; }
+  .intuition-score { display: inline-block; margin-top: 12px; }
+  .intuition-rail { grid-template-columns: 1fr; }
+  .intuition-step { padding: 8px 10px; }
+  .practice-header .btn { margin: 8px 0 16px; }
   .mobile-nav a { display: grid; gap: 3px; justify-items: center; color: var(--muted); font-size: 9px; font-weight: 800; }
   .mobile-nav a.active { color: var(--aqua-deep); }
   .page { padding: 32px 16px 100px; }

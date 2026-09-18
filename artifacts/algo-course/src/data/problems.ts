@@ -7,6 +7,15 @@ export type LessonStep = {
   body?: string;
 };
 
+export type IntuitionCheck = {
+  kind: 'invariant' | 'trace' | 'tradeoff';
+  label: string;
+  question: string;
+  choices: string[];
+  answer: number;
+  explanation: string;
+};
+
 export type Problem = {
   slug: string;
   title: string;
@@ -25,6 +34,69 @@ export type Problem = {
   complexity: { time: string; space: string };
   checkpoint: { question: string; choices: string[]; answer: number };
 };
+
+const patternChecks: Record<string, [IntuitionCheck, IntuitionCheck]> = {
+  'Sliding window': [
+    { kind: 'trace', label: 'Trace a failure', question: 'When the window becomes invalid, what should move first?', choices: ['The right edge jumps back', 'The left edge moves until the invariant is restored', 'Both edges reset to the beginning'], answer: 1, explanation: 'Keep the scan moving forward. Shrinking only from the left preserves work already proved safe.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'Why does this beat checking every possible substring?', choices: ['It avoids revisiting characters that are still valid', 'It sorts the string before scanning', 'It tries every substring in parallel'], answer: 0, explanation: 'Each edge only moves forward, so the scan stays linear instead of restarting for every candidate range.' },
+  ],
+  'Two pointers': [
+    { kind: 'trace', label: 'Trace a failure', question: 'For a sorted array, which side can be ruled out after a sum is too small?', choices: ['The larger value on the right', 'The smaller value on the left', 'Neither side can move'], answer: 1, explanation: 'Moving the smaller value is the only move that can increase the sum.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'What work does the pointer walk avoid?', choices: ['Comparing every pair', 'Reading the input', 'Checking the final answer'], answer: 0, explanation: 'The sorted order lets each pointer movement eliminate many pairs at once.' },
+  ],
+  'Binary search': [
+    { kind: 'trace', label: 'Trace a failure', question: 'What must be true before discarding half of the search space?', choices: ['The remaining predicate is monotonic', 'The array contains only unique values', 'The midpoint is the answer'], answer: 0, explanation: 'Binary search is safe when a yes/no condition changes direction at most once.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'What does binary search trade for its speed?', choices: ['It needs an ordered or monotonic signal', 'It uses more memory than a scan', 'It checks every item twice'], answer: 0, explanation: 'The logarithmic speed comes from relying on order; without a monotonic signal, the discard is not justified.' },
+  ],
+  Intervals: [
+    { kind: 'trace', label: 'Trace a failure', question: 'After sorting intervals, when can the current interval merge with the previous one?', choices: ['When its start is before the current end', 'Only when both endpoints match', 'Whenever its end is larger'], answer: 0, explanation: 'Sorting makes the next interval the only one that can extend or break the current merged frontier.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'Why sort before scanning?', choices: ['It creates a one-direction timeline', 'It removes all duplicate intervals', 'It guarantees every interval overlaps'], answer: 0, explanation: 'The sort costs time up front, then makes the merge decision local and linear.' },
+  ],
+  Stack: [
+    { kind: 'trace', label: 'Trace a failure', question: 'What belongs on the stack while a future answer is unresolved?', choices: ['Items waiting for a larger or smaller signal', 'Only items already solved', 'Every item from the input forever'], answer: 0, explanation: 'The stack stores unresolved work in an order that lets the next signal resolve the most recent candidate first.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'What does the stack save you from doing?', choices: ['Scanning backward repeatedly', 'Reading values in order', 'Storing the final result'], answer: 0, explanation: 'Each item is pushed and popped once, replacing repeated backward scans with amortized linear work.' },
+  ],
+  'Linked list': [
+    { kind: 'trace', label: 'Trace a failure', question: 'What is the safest habit when rewiring a linked list?', choices: ['Save the next pointer before changing links', 'Change every pointer at once', 'Move only the head pointer'], answer: 0, explanation: 'Saving the next node prevents the remaining list from becoming unreachable.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'Why use pointer manipulation instead of copying values?', choices: ['The node relationships are the problem', 'Copies always use less memory', 'Pointers automatically sort the list'], answer: 0, explanation: 'The task usually asks you to change the list structure while preserving each node and its identity.' },
+  ],
+  Trees: [
+    { kind: 'trace', label: 'Trace a failure', question: 'What does a level-order traversal need to remember?', choices: ['The next frontier of nodes', 'Only the deepest leaf', 'Every path as a string'], answer: 0, explanation: 'A queue preserves the current breadth frontier so each level can be processed before the next.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'When is breadth-first search a natural fit?', choices: ['When distance or level is the answer', 'When only one leaf matters', 'When the tree has no root'], answer: 0, explanation: 'BFS discovers nodes in increasing distance from the root, making level and shortest-depth questions direct.' },
+  ],
+  Graphs: [
+    { kind: 'trace', label: 'Trace a failure', question: 'Why mark a node visited before exploring its neighbors?', choices: ['To prevent cycles from re-enqueueing it', 'To change its value', 'To sort adjacent nodes'], answer: 0, explanation: 'Marking on entry gives every node one owner and keeps cyclic graphs from causing repeated work.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'What does a graph traversal trade for complete coverage?', choices: ['Visited memory proportional to explored nodes', 'A second copy of every edge', 'Sorting all vertices first'], answer: 0, explanation: 'The visited set is the small amount of memory that buys safe, complete exploration.' },
+  ],
+  Backtracking: [
+    { kind: 'trace', label: 'Trace a failure', question: 'What must happen after exploring one candidate choice?', choices: ['Undo the choice before trying the next', 'Keep every choice forever', 'Restart without returning'], answer: 0, explanation: 'Undoing restores the decision state so the next branch starts from the same clean prefix.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'What makes backtracking manageable?', choices: ['Pruning choices that cannot lead to a valid answer', 'Sorting the final answers', 'Avoiding recursion entirely'], answer: 0, explanation: 'The search can be exponential, so every safe prune matters.' },
+  ],
+  Heap: [
+    { kind: 'trace', label: 'Trace a failure', question: 'Why remove the root when a size-k heap grows too large?', choices: ['It is the weakest member of the kept candidates', 'It is always the global maximum', 'It is the newest item'], answer: 0, explanation: 'For a min-heap tracking the largest k values, the root is the easiest winner to discard.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'When is a heap preferable to sorting everything?', choices: ['When k is much smaller than n', 'When values are already strings', 'When every item must be output in order'], answer: 0, explanation: 'A size-k heap keeps memory and update cost tied to k instead of the entire input.' },
+  ],
+  'Dynamic programming': [
+    { kind: 'trace', label: 'Trace a failure', question: 'What makes a subproblem safe to reuse?', choices: ['Its answer depends on smaller, well-defined states', 'It changes randomly each time', 'It includes the entire input every time'], answer: 0, explanation: 'A clear state and recurrence turn repeated work into a table of answers.' },
+    { kind: 'tradeoff', label: 'Choose the tradeoff', question: 'What does dynamic programming spend to avoid repeated recursion?', choices: ['Memory for stored subproblem answers', 'A second input array', 'Time sorting the states'], answer: 0, explanation: 'DP trades space for time by remembering the result of each state.' },
+  ],
+};
+
+export function intuitionChecksFor(problem: Problem): IntuitionCheck[] {
+  const [trace, tradeoff] = patternChecks[problem.pattern] ?? [];
+  return [
+    {
+      kind: 'invariant',
+      label: 'Name the invariant',
+      question: problem.checkpoint.question,
+      choices: problem.checkpoint.choices,
+      answer: problem.checkpoint.answer,
+      explanation: 'The correct choice names the fact your algorithm keeps true while it moves through the input.',
+    },
+    trace,
+    tradeoff,
+  ];
+}
 
 const sharedSteps = (concept: string, visual: string): LessonStep[] => [
   { kind: 'concept', title: 'Spot the pattern', subtitle: 'The idea before the syntax', body: concept },
