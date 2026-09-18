@@ -1,0 +1,96 @@
+# Builds the AlgoCourse SPA and publishes it to GitHub Pages.
+#
+# The app is fully static and talks to Supabase from the browser, so Pages can
+# serve it without a backend. Progress and Google sign-in keep working because
+# Supabase is reached over the network, not through this host.
+name: Deploy AlgoCourse to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'artifacts/algo-course/**'
+      - 'lib/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; always finish with the newest commit.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm 10 is required: this repo configures native builds with
+      # `onlyBuiltDependencies`, which pnpm 12 renamed to `allowBuilds`. On
+      # pnpm 12 the install fails with ERR_PNPM_IGNORED_BUILDS.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # VITE_* values are inlined at build time. Without them the app silently
+      # builds in local-only mode and the sign-in button just disappears, so
+      # fail here instead of publishing something quietly broken.
+      - name: Check Supabase credentials are present
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          missing=""
+          [ -n "$VITE_SUPABASE_URL" ] || missing="$missing VITE_SUPABASE_URL"
+          [ -n "$VITE_SUPABASE_PUBLISHABLE_KEY" ] || missing="$missing VITE_SUPABASE_PUBLISHABLE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo "Add them under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Build
+        env:
+          # vite.config.ts requires both; PORT only affects the dev server.
+          PORT: 25462
+          # Project sites are served from /<repo>/, not the domain root.
+          BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: pnpm --filter @workspace/algo-course run build
+
+      # Pages serves static files, so a deep link like /problems would 404.
+      # Reusing index.html as the 404 page hands those routes to the SPA router.
+      - name: Add SPA fallback
+        run: cp artifacts/algo-course/dist/public/index.html artifacts/algo-course/dist/public/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: artifacts/algo-course/dist/public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
