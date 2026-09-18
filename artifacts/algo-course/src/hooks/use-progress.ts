@@ -149,7 +149,9 @@ export function useProgress() {
     if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      // BASE_URL matters on GitHub Pages, where the app is served from a
+      // subpath (/LeetCode-Academy/) rather than the origin root.
+      options: { redirectTo: new URL(import.meta.env.BASE_URL, window.location.origin).toString() },
     });
   }, []);
 
