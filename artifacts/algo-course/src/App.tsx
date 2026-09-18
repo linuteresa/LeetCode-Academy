@@ -4,7 +4,7 @@ import { Link, Route, Router as WouterRouter, Switch, useLocation, useParams } f
 import {
   ArrowLeft, ArrowRight, BarChart3, Bookmark, BookOpen, BrainCircuit, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Code2, Compass, Flame, GitBranch,
-  ExternalLink, Grid2X2, Layers3, Lightbulb, ListFilter, LogIn, LogOut, Menu, Network, Play, RefreshCw, RotateCcw, Search,
+  AlertTriangle, ExternalLink, Grid2X2, Layers3, Lightbulb, ListFilter, LogIn, LogOut, Menu, Network, Play, RefreshCw, RotateCcw, Search,
   Sparkles, Target, Timer, Trophy, X, Zap,
 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -33,6 +33,7 @@ const syncLabels: Record<SyncState, string> = {
   syncing: 'Saving\u2026',
   synced: 'Progress saved to your account',
   error: 'Could not reach your account \u2014 saved on this device',
+  'no-storage': 'This browser is blocking storage \u2014 progress will not be kept',
 };
 
 /**
@@ -62,7 +63,9 @@ function Account({ session, authReady, syncState, signInWithGoogle, signOut }: A
         <small>{session.user.email}</small>
       </div>
       <div className={`account-sync ${syncState}`}>
-        {syncState === 'syncing' ? <RefreshCw size={12} className="spin" /> : <CheckCircle2 size={12} />}
+        {syncState === 'syncing' ? <RefreshCw size={12} className="spin" />
+          : syncState === 'error' || syncState === 'no-storage' ? <AlertTriangle size={12} />
+          : <CheckCircle2 size={12} />}
         {syncLabels[syncState]}
       </div>
       <button className="account-action" onClick={() => { setOpen(false); signOut(); }} role="menuitem" data-testid="button-sign-out">
@@ -117,8 +120,15 @@ function Shell({ children, progress, auth }: { children: ReactNode; progress: Pe
 function Home({ progress, setStatus }: { progress: Persisted; setStatus: (slug: string, status: ProblemStatus) => void }) {
   const completed = problems.filter((p) => statusOf(p, progress) === 'completed').length;
   const started = problems.filter((p) => statusOf(p, progress) === 'in-progress').length;
-  const continueProblem = problems.find((p) => statusOf(p, progress) === 'in-progress') ?? problems.find((p) => statusOf(p, progress) === 'not-started') ?? problems[0];
-  const recent = problems.filter((p) => statusOf(p, progress) !== 'not-started').slice(0, 3);
+  const lastVisited = progress.lastSlug ? problems.find((p) => p.slug === progress.lastSlug) : undefined;
+  const continueProblem = (lastVisited && statusOf(lastVisited, progress) !== 'completed' ? lastVisited : undefined)
+    ?? problems.find((p) => statusOf(p, progress) === 'in-progress')
+    ?? problems.find((p) => statusOf(p, progress) === 'not-started')
+    ?? problems[0];
+  const recent = progress.recent
+    .map((slug) => problems.find((p) => p.slug === slug))
+    .filter((p): p is Problem => Boolean(p))
+    .slice(0, 3);
   const coverage = patterns.map((pattern) => {
     const set = problems.filter((p) => p.pattern === pattern);
     return { pattern, done: set.filter((p) => statusOf(p, progress) === 'completed').length, total: set.length };
@@ -227,20 +237,21 @@ function PatternsPage({ progress }: { progress: Persisted }) {
 function Lesson({ progress, setStatus, toggleBookmark }: { progress: Persisted; setStatus: (slug: string, status: ProblemStatus) => void; toggleBookmark: (slug: string) => void }) {
   const { slug } = useParams<{ slug: string }>();
   const [, setLocation] = useLocation();
-  const problem = problems.find((item) => item.slug === slug) ?? problems[0];
+  const problem = problems.find((item) => item.slug === slug);
   const [step, setStep] = useState(0);
   const [checkAnswers, setCheckAnswers] = useState<(number | null)[]>([]);
   const [showHints, setShowHints] = useState<number[]>([]);
   const [codeTab, setCodeTab] = useState<'starter' | 'solution'>('starter');
-  const currentStatus = statusOf(problem, progress);
+  const currentStatus = problem ? statusOf(problem, progress) : 'not-started';
   const isDone = currentStatus === 'completed';
-  const steps = problem.steps ?? [];
-  const hints = problem.hints ?? [];
-  const intuitionChecks = intuitionChecksFor(problem);
+  const steps = problem?.steps ?? [];
+  const hints = problem?.hints ?? [];
+  const intuitionChecks = problem ? intuitionChecksFor(problem) : [];
   const allChecksCorrect = intuitionChecks.every((check, index) => checkAnswers[index] === check.answer);
-  useEffect(() => { if (currentStatus === 'not-started') setStatus(problem.slug, 'in-progress'); }, [problem.slug]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setStep(0); setCheckAnswers([]); setShowHints([]); setCodeTab('starter'); }, [problem.slug]);
+  useEffect(() => { if (problem && currentStatus === 'not-started') setStatus(problem.slug, 'in-progress'); }, [problem?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setStep(0); setCheckAnswers([]); setShowHints([]); setCodeTab('starter'); }, [problem?.slug]);
   const chooseCheckAnswer = (checkIndex: number, answer: number) => setCheckAnswers((items) => { const next = [...items]; next[checkIndex] = answer; return next; });
+  if (!problem) return <NotFound />;
   if (!problem.lessonReady) {
     return <PracticeView problem={problem} isDone={isDone} bookmarked={progress.bookmarks.includes(problem.slug)} toggleBookmark={toggleBookmark} setStatus={setStatus} codeTab={codeTab} setCodeTab={setCodeTab} />;
   }

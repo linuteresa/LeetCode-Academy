@@ -3,8 +3,12 @@ import type { Session } from '@supabase/supabase-js';
 import type { ProblemStatus } from '@/data/problems';
 import { supabase } from '@/lib/supabase';
 import {
-  mergeProgress,
+  chooseProgress,
+  clearLocalProgress,
+  emptyProgress,
+  noteRecent,
   readLocalProgress,
+  registerActivity,
   writeLocalProgress,
   type Persisted,
 } from '@/lib/progress';
@@ -16,7 +20,7 @@ type ProgressRow = {
   last_slug: string | null;
 };
 
-export type SyncState = 'local' | 'syncing' | 'synced' | 'error';
+export type SyncState = 'local' | 'syncing' | 'synced' | 'error' | 'no-storage';
 
 const PUSH_DEBOUNCE_MS = 800;
 
@@ -26,6 +30,10 @@ function rowToProgress(row: ProgressRow): Persisted {
     bookmarks: row.bookmarks ?? [],
     streak: row.streak ?? 0,
     lastSlug: row.last_slug ?? undefined,
+    // Owner is stamped by the caller; recency and activity dates are per-device.
+    ownerId: null,
+    recent: [],
+    lastActiveDate: null,
   };
 }
 
@@ -88,10 +96,10 @@ export function useProgress() {
       }
 
       const local = readLocalProgress();
-      const merged = data ? mergeProgress(rowToProgress(data as ProgressRow), local) : local;
+      const remote = data ? rowToProgress(data as ProgressRow) : null;
 
       hydratedFor.current = userId;
-      setProgress(merged);
+      setProgress(chooseProgress(local, remote, userId));
       setSyncState('synced');
     })();
 
@@ -103,7 +111,7 @@ export function useProgress() {
   // localStorage stays authoritative for a signed-out session and is a useful
   // offline cache for a signed-in one, so it is always written.
   useEffect(() => {
-    writeLocalProgress(progress);
+    if (!writeLocalProgress(progress)) setSyncState('no-storage');
   }, [progress]);
 
   // Push to Supabase, debounced so a burst of clicks is one round trip.
@@ -133,7 +141,11 @@ export function useProgress() {
   }, [progress, userId]);
 
   const setStatus = useCallback((slug: string, status: ProblemStatus) => {
-    setProgress((p) => ({ ...p, statuses: { ...p.statuses, [slug]: status }, lastSlug: slug }));
+    setProgress((p) =>
+      registerActivity(
+        noteRecent({ ...p, statuses: { ...p.statuses, [slug]: status }, lastSlug: slug }, slug),
+      ),
+    );
   }, []);
 
   const toggleBookmark = useCallback((slug: string) => {
@@ -158,6 +170,11 @@ export function useProgress() {
   const signOut = useCallback(async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
+    // The account's progress is safely on the server. Wiping the device copy
+    // keeps it off the screen for whoever uses this browser next.
+    hydratedFor.current = null;
+    clearLocalProgress();
+    setProgress(emptyProgress);
     setSyncState('local');
   }, []);
 

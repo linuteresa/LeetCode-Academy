@@ -66,6 +66,9 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Test
+        run: pnpm --filter @workspace/algo-course test
+
       - name: Build
         env:
           # vite.config.ts requires both; PORT only affects the dev server.
