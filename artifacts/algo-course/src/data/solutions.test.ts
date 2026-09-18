@@ -40,6 +40,27 @@ check('every solution and starter parses', unparseable, []);
 check('no solution calls an undefined class', phantomClass, []);
 check('the catalog is complete', neetcode150.length, 150);
 
+// Every problem must carry a real statement with worked examples, not a
+// one-line paraphrase and an empty array.
+const noStatement = neetcode150.filter((p) => !p.statement?.length);
+const thinStatement = neetcode150.filter((p) => (p.statement ?? []).join(' ').length < 60);
+const noExamples = neetcode150.filter((p) => !p.examples?.length);
+const brokenExample = neetcode150.filter((p) => p.examples?.some((e) => !e.input?.trim() || !e.output?.trim()));
+const noConstraints = neetcode150.filter((p) => !p.constraints?.length);
+
+check('every problem has a statement', noStatement.map((p) => p.slug), []);
+check('no statement is a stub', thinStatement.map((p) => p.slug), []);
+check('every problem has a worked example', noExamples.map((p) => p.slug), []);
+check('every example has an input and an output', brokenExample.map((p) => p.slug), []);
+check('every problem lists its constraints', noConstraints.map((p) => p.slug), []);
+
+// Some statements really are one sentence -- Invert Binary Tree is -- so the
+// statement is not required to be longer than the prompt. What must always add
+// information is the worked examples, checked above. Guard instead against a
+// wholesale copy, which would mean no long form was written at all.
+const copiedFromPrompt = neetcode150.filter((p) => (p.statement ?? []).join(' ') === p.prompt);
+check('statements are not bulk copies of the prompt', copiedFromPrompt.length < 10, true);
+
 // 2. Spot-check behaviour, weighted to the solutions that were broken.
 const run = (slug: string, call: string, ...args: unknown[]) => {
   const problem = neetcode150.find((p) => p.slug === slug);

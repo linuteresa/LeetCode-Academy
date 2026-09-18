@@ -324,7 +324,7 @@ function Lesson({ progress, setStatus, toggleBookmark, visit }: { progress: Pers
     <div className="lesson-layout">
       <aside className="lesson-side"><h4>{problem.pattern}</h4><div className="step-nav">{steps.map((item, index) => { const locked = index > 2 && !allChecksCorrect && !isDone; return <button className={`step-button ${step === index ? 'active' : ''} ${index < step || isDone ? 'done' : ''} ${locked ? 'locked' : ''}`} disabled={locked} aria-disabled={locked} title={locked ? 'Pass the checkpoint first' : undefined} aria-label={`Step ${index + 1}: ${item.title}${locked ? ' (locked)' : ''}`} onClick={() => { if (!locked) setStep(index); }} key={item.kind} data-testid={`button-step-${index + 1}`}><span className="step-number">{index < step || isDone ? <Check size={12} /> : index + 1}</span><span>{item.title}</span></button>; })}</div><div style={{ marginTop: 25, padding: 13, background: 'var(--gold-soft)', borderRadius: 12, color: 'var(--gold-text)', fontSize: 11, lineHeight: 1.55 }}><Sparkles size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} /> Stay curious. The pattern is the win.</div></aside>
       <section className="lesson-main">
-        <div className="lesson-header"><div className="eyebrow">{problem.number} · {problem.pattern} · {problem.difficulty.toLowerCase()}</div><h1 className="display">{problem.title}</h1><p>{problem.summary}</p><ModeSwitch slug={problem.slug} mode="learn" /><div className="problem-statement" data-testid="text-problem-statement"><h4>The problem</h4><p>{problem.prompt}</p></div></div>
+        <div className="lesson-header"><div className="eyebrow">{problem.number} · {problem.pattern} · {problem.difficulty.toLowerCase()}</div><h1 className="display">{problem.title}</h1><p>{problem.summary}</p><ModeSwitch slug={problem.slug} mode="learn" /><ProblemStatement problem={problem} /></div>
         {isDone ? <div className="complete-card"><div className="complete-icon"><Trophy size={31} /></div><h2>Pattern added to your toolkit.</h2><p>You completed this guided lesson. The next time this shape appears, you’ll have a place to start.</p><div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}><button className="btn btn-secondary" onClick={() => { setStep(0); setCheckAnswers([]); setReviewing(true); }} data-testid="button-review-lesson"><RotateCcw size={14} /> Review lesson</button><Link href="/problems" className="btn btn-primary" data-testid="button-next-problem">Choose another <ArrowRight size={14} /></Link></div></div> : <LessonStepContent problem={problem} step={step} intuitionChecks={intuitionChecks} checkAnswers={checkAnswers} setCheckAnswer={chooseCheckAnswer} showHints={showHints} setShowHints={setShowHints} codeTab={codeTab} setCodeTab={setCodeTab} />}
          {!isDone && <div className="lesson-actions"><button className="btn btn-secondary" disabled={step === 0} style={{ opacity: step === 0 ? .45 : 1 }} onClick={() => setStep((value) => value - 1)} data-testid="button-previous-step"><ArrowLeft size={14} /> Previous</button><button className="btn btn-primary" disabled={step === 2 && !allChecksCorrect} onClick={next} data-testid="button-next-step">{step === steps.length - 1 ? 'Complete lesson' : 'Next step'} <ArrowRight size={14} /></button></div>}
       </section>
@@ -438,7 +438,7 @@ function Practice({ progress, setStatus, toggleBookmark, visit }: { progress: Pe
           <h1 className="display">{problem.title}</h1>
           <p>{problem.summary}</p>
           <ModeSwitch slug={problem.slug} mode="practice" />
-          <div className="problem-statement" data-testid="text-problem-statement"><h4>The problem</h4><p>{problem.prompt}</p></div>
+          <ProblemStatement problem={problem} />
         </div>
         <InterviewPanel problem={problem} />
         {currentStatus !== 'completed' && <div className="lesson-actions">
@@ -447,6 +447,34 @@ function Practice({ progress, setStatus, toggleBookmark, visit }: { progress: Pe
       </section>
     </div>
   </main>;
+}
+
+/**
+ * The full statement, with worked examples and input bounds. Falls back to the
+ * one-line prompt for any problem whose long form is not written yet.
+ */
+function ProblemStatement({ problem }: { problem: Problem }) {
+  const paragraphs = problem.statement?.length ? problem.statement : [problem.prompt];
+  return <div className="problem-statement" data-testid="text-problem-statement">
+    <h4>The problem</h4>
+    {paragraphs.map((text) => <p key={text}>{text}</p>)}
+
+    {problem.examples?.length ? <div className="examples">
+      {problem.examples.map((example, index) => <div className="example" key={index}>
+        <h5>Example {index + 1}</h5>
+        <dl>
+          <dt>Input</dt><dd><code>{example.input}</code></dd>
+          <dt>Output</dt><dd><code>{example.output}</code></dd>
+          {example.explanation && <><dt>Why</dt><dd>{example.explanation}</dd></>}
+        </dl>
+      </div>)}
+    </div> : null}
+
+    {problem.constraints?.length ? <div className="constraints">
+      <h5>Constraints</h5>
+      <ul>{problem.constraints.map((line) => <li key={line}><code>{line}</code></li>)}</ul>
+    </div> : null}
+  </div>;
 }
 
 function VisualModel({ pattern }: { pattern: string }) {

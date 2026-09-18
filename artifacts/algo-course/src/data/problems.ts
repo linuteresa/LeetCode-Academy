@@ -21,6 +21,14 @@ export type IntuitionCheck = {
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
 
 /** Everything the catalog knows about a problem, before a lesson is written for it. */
+/** A worked example, in the shape LeetCode states them. */
+export type Example = {
+  input: string;
+  output: string;
+  /** Why that output, when it is not self-evident. */
+  explanation?: string;
+};
+
 export type CatalogProblem = {
   slug: string;
   title: string;
@@ -30,7 +38,13 @@ export type CatalogProblem = {
   estimatedMinutes: number;
   summary: string;
   tags: string[];
+  /** One-line framing, used in listings. */
   prompt: string;
+  /** The full statement, as paragraphs. */
+  statement: string[];
+  examples: Example[];
+  /** Input bounds, one per line. */
+  constraints: string[];
   starterCode: string;
   solutionCode: string;
   complexity: { time: string; space: string };
