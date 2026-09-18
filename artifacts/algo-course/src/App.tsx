@@ -16,6 +16,7 @@ import { authConfigured } from '@/lib/supabase';
 import type { Persisted } from '@/lib/progress';
 import type { Session } from '@supabase/supabase-js';
 import { applyTheme, storeTheme, storedTheme, systemTheme, type ThemePreference } from '@/lib/theme';
+import { InterviewPanel } from '@/components/interview-panel';
 
 const queryClient = new QueryClient();
 
@@ -323,7 +324,7 @@ function Lesson({ progress, setStatus, toggleBookmark, visit }: { progress: Pers
     <div className="lesson-layout">
       <aside className="lesson-side"><h4>{problem.pattern}</h4><div className="step-nav">{steps.map((item, index) => { const locked = index > 2 && !allChecksCorrect && !isDone; return <button className={`step-button ${step === index ? 'active' : ''} ${index < step || isDone ? 'done' : ''} ${locked ? 'locked' : ''}`} disabled={locked} aria-disabled={locked} title={locked ? 'Pass the checkpoint first' : undefined} aria-label={`Step ${index + 1}: ${item.title}${locked ? ' (locked)' : ''}`} onClick={() => { if (!locked) setStep(index); }} key={item.kind} data-testid={`button-step-${index + 1}`}><span className="step-number">{index < step || isDone ? <Check size={12} /> : index + 1}</span><span>{item.title}</span></button>; })}</div><div style={{ marginTop: 25, padding: 13, background: 'var(--gold-soft)', borderRadius: 12, color: 'var(--gold-text)', fontSize: 11, lineHeight: 1.55 }}><Sparkles size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} /> Stay curious. The pattern is the win.</div></aside>
       <section className="lesson-main">
-        <div className="lesson-header"><div className="eyebrow">{problem.number} · {problem.pattern} · {problem.difficulty.toLowerCase()}</div><h1 className="display">{problem.title}</h1><p>{problem.summary}</p><div className="problem-statement" data-testid="text-problem-statement"><h4>The problem</h4><p>{problem.prompt}</p></div></div>
+        <div className="lesson-header"><div className="eyebrow">{problem.number} · {problem.pattern} · {problem.difficulty.toLowerCase()}</div><h1 className="display">{problem.title}</h1><p>{problem.summary}</p><ModeSwitch slug={problem.slug} mode="learn" /><div className="problem-statement" data-testid="text-problem-statement"><h4>The problem</h4><p>{problem.prompt}</p></div></div>
         {isDone ? <div className="complete-card"><div className="complete-icon"><Trophy size={31} /></div><h2>Pattern added to your toolkit.</h2><p>You completed this guided lesson. The next time this shape appears, you’ll have a place to start.</p><div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}><button className="btn btn-secondary" onClick={() => { setStep(0); setCheckAnswers([]); setReviewing(true); }} data-testid="button-review-lesson"><RotateCcw size={14} /> Review lesson</button><Link href="/problems" className="btn btn-primary" data-testid="button-next-problem">Choose another <ArrowRight size={14} /></Link></div></div> : <LessonStepContent problem={problem} step={step} intuitionChecks={intuitionChecks} checkAnswers={checkAnswers} setCheckAnswer={chooseCheckAnswer} showHints={showHints} setShowHints={setShowHints} codeTab={codeTab} setCodeTab={setCodeTab} />}
          {!isDone && <div className="lesson-actions"><button className="btn btn-secondary" disabled={step === 0} style={{ opacity: step === 0 ? .45 : 1 }} onClick={() => setStep((value) => value - 1)} data-testid="button-previous-step"><ArrowLeft size={14} /> Previous</button><button className="btn btn-primary" disabled={step === 2 && !allChecksCorrect} onClick={next} data-testid="button-next-step">{step === steps.length - 1 ? 'Complete lesson' : 'Next step'} <ArrowRight size={14} /></button></div>}
       </section>
@@ -396,6 +397,58 @@ function PracticeView({ problem, isDone, bookmarked, toggleBookmark, setStatus, 
   </main>;
 }
 
+/** Learn walks the lesson; Practice talks it through. Same problem, same header. */
+function ModeSwitch({ slug, mode }: { slug: string; mode: 'learn' | 'practice' }) {
+  return <div className="mode-switch" role="tablist" aria-label="Study mode">
+    <Link href={`/learn/${slug}`} role="tab" aria-selected={mode === 'learn'} className={mode === 'learn' ? 'active' : ''} data-testid="link-mode-learn">
+      <BookOpen size={14} /> Learn
+    </Link>
+    <Link href={`/practice/${slug}`} role="tab" aria-selected={mode === 'practice'} className={mode === 'practice' ? 'active' : ''} data-testid="link-mode-practice">
+      <BrainCircuit size={14} /> Practice
+    </Link>
+  </div>;
+}
+
+function Practice({ progress, setStatus, toggleBookmark, visit }: { progress: Persisted; setStatus: (slug: string, status: ProblemStatus) => void; toggleBookmark: (slug: string) => void; visit: (slug: string) => void }) {
+  const { slug } = useParams<{ slug: string }>();
+  const problem = problems.find((item) => item.slug === slug);
+  const currentStatus = problem ? statusOf(problem, progress) : 'not-started';
+
+  useEffect(() => {
+    if (!problem) return;
+    if (currentStatus === 'not-started') setStatus(problem.slug, 'in-progress');
+    else visit(problem.slug);
+  }, [problem?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!problem) return <NotFound />;
+
+  return <main className="lesson-shell">
+    <div className="lesson-top">
+      <Link href="/problems" className="back-link" data-testid="link-back-library"><ArrowLeft size={15} /> Back to library</Link>
+      <div className="lesson-progress">
+        <button className={`icon-button ${progress.bookmarks.includes(problem.slug) ? 'bookmarked' : ''}`} onClick={() => toggleBookmark(problem.slug)} aria-label={progress.bookmarks.includes(problem.slug) ? 'Remove bookmark' : 'Bookmark problem'} data-testid="button-bookmark-lesson">
+          <Bookmark size={17} fill={progress.bookmarks.includes(problem.slug) ? 'currentColor' : 'none'} />
+        </button>
+      </div>
+    </div>
+    <div className="lesson-layout" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
+      <section className="lesson-main">
+        <div className="lesson-header">
+          <div className="eyebrow">{problem.number} · {problem.pattern} · {problem.difficulty.toLowerCase()}</div>
+          <h1 className="display">{problem.title}</h1>
+          <p>{problem.summary}</p>
+          <ModeSwitch slug={problem.slug} mode="practice" />
+          <div className="problem-statement" data-testid="text-problem-statement"><h4>The problem</h4><p>{problem.prompt}</p></div>
+        </div>
+        <InterviewPanel problem={problem} />
+        {currentStatus !== 'completed' && <div className="lesson-actions">
+          <button className="btn btn-secondary" onClick={() => setStatus(problem.slug, 'completed')} data-testid="button-mark-complete"><CheckCircle2 size={14} /> Mark as solved</button>
+        </div>}
+      </section>
+    </div>
+  </main>;
+}
+
 function VisualModel({ pattern }: { pattern: string }) {
   const teaching = teachingFor(pattern);
   return <div className="visual-model">
@@ -423,7 +476,7 @@ function NotFound() { return <main className="page"><div className="panel empty-
  */
 function Router() {
   const { progress, setStatus, toggleBookmark, visit, session, authReady, syncState, signInWithGoogle, signOut } = useProgress();
-  return <Shell progress={progress} auth={{ session, authReady, syncState, signInWithGoogle, signOut }}><ErrorBoundary resetKey={location.pathname}><Switch><Route path="/"><Home progress={progress} setStatus={setStatus} /></Route><Route path="/problems"><Library progress={progress} toggleBookmark={toggleBookmark} storageLabel={storageLabels[syncState]} /></Route><Route path="/patterns"><PatternsPage progress={progress} /></Route><Route path="/learn/:slug"><Lesson progress={progress} setStatus={setStatus} toggleBookmark={toggleBookmark} visit={visit} /></Route><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
+  return <Shell progress={progress} auth={{ session, authReady, syncState, signInWithGoogle, signOut }}><ErrorBoundary resetKey={location.pathname}><Switch><Route path="/"><Home progress={progress} setStatus={setStatus} /></Route><Route path="/problems"><Library progress={progress} toggleBookmark={toggleBookmark} storageLabel={storageLabels[syncState]} /></Route><Route path="/patterns"><PatternsPage progress={progress} /></Route><Route path="/learn/:slug"><Lesson progress={progress} setStatus={setStatus} toggleBookmark={toggleBookmark} visit={visit} /></Route><Route path="/practice/:slug"><Practice progress={progress} setStatus={setStatus} toggleBookmark={toggleBookmark} visit={visit} /></Route><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
 }
 
 function App() {
