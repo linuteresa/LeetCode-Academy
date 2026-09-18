@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "AlgoCourse"
+description = "An interactive learning platform for mastering medium-level LeetCode problems through guided lessons, visual explanations, checkpoints, and hands-on practice."
+version = "1.0.0"
+id = "artifacts/algo-course"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25462
+
+[services.development]
+run = "pnpm --filter @workspace/algo-course run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/algo-course", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/algo-course/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25462"
+BASE_PATH = "/"
