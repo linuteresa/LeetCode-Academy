@@ -1,5 +1,15 @@
 import type { ProblemStatus } from '@/data/problems';
 
+/**
+ * Per-change timestamps, keyed by `s:<slug>` for a status and `b:<slug>` for a
+ * bookmark. They are what let two devices reconcile field by field instead of
+ * one whole object clobbering the other.
+ */
+export type ChangeClock = Record<string, number>;
+
+export const statusKey = (slug: string) => `s:${slug}`;
+export const bookmarkKey = (slug: string) => `b:${slug}`;
+
 export type Persisted = {
   statuses: Record<string, ProblemStatus>;
   bookmarks: string[];
@@ -11,10 +21,11 @@ export type Persisted = {
    * browser would fold the first person's progress into the second's account.
    */
   ownerId: string | null;
-  /** Slugs touched most recently first. Device-local; not synced. */
+  /** Slugs touched most recently first. Device-local; see SYNC.md. */
   recent: string[];
   /** ISO date (YYYY-MM-DD) of the last day with activity, for the streak. */
   lastActiveDate: string | null;
+  updatedAt: ChangeClock;
 };
 
 export const STORAGE_KEY = 'algocourse-progress-v1';
@@ -28,12 +39,63 @@ export const emptyProgress: Persisted = {
   ownerId: null,
   recent: [],
   lastActiveDate: null,
+  updatedAt: {},
 };
+
+const STATUSES: ProblemStatus[] = ['not-started', 'in-progress', 'completed'];
+
+/**
+ * Coerce anything that came out of storage or the network into a usable shape.
+ *
+ * Parsed JSON is not the same as valid data: a hand-edited entry, a half-written
+ * record or an older release can all produce well-formed JSON with the wrong
+ * types, and `bookmarks: null` would then blow up on `.includes()`.
+ */
+export function normalizeProgress(raw: unknown): Persisted {
+  const input = (raw ?? {}) as Record<string, unknown>;
+
+  const statuses: Record<string, ProblemStatus> = {};
+  const rawStatuses = input.statuses;
+  if (rawStatuses && typeof rawStatuses === 'object' && !Array.isArray(rawStatuses)) {
+    for (const [slug, value] of Object.entries(rawStatuses as Record<string, unknown>)) {
+      if (typeof value === 'string' && (STATUSES as string[]).includes(value)) {
+        statuses[slug] = value as ProblemStatus;
+      }
+    }
+  }
+
+  const bookmarks = Array.isArray(input.bookmarks)
+    ? [...new Set(input.bookmarks.filter((s): s is string => typeof s === 'string'))]
+    : [];
+
+  const updatedAt: ChangeClock = {};
+  const rawClock = input.updatedAt;
+  if (rawClock && typeof rawClock === 'object' && !Array.isArray(rawClock)) {
+    for (const [key, value] of Object.entries(rawClock as Record<string, unknown>)) {
+      if (typeof value === 'number' && Number.isFinite(value)) updatedAt[key] = value;
+    }
+  }
+
+  const recent = Array.isArray(input.recent)
+    ? [...new Set(input.recent.filter((s): s is string => typeof s === 'string'))].slice(0, RECENT_LIMIT)
+    : [];
+
+  return {
+    statuses,
+    bookmarks,
+    updatedAt,
+    recent,
+    streak: typeof input.streak === 'number' && input.streak >= 0 ? input.streak : 0,
+    lastSlug: typeof input.lastSlug === 'string' ? input.lastSlug : undefined,
+    ownerId: typeof input.ownerId === 'string' ? input.ownerId : null,
+    lastActiveDate: typeof input.lastActiveDate === 'string' ? input.lastActiveDate : null,
+  };
+}
 
 export function readLocalProgress(): Persisted {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return { ...emptyProgress, ...(JSON.parse(saved) as Partial<Persisted>) };
+    if (saved) return normalizeProgress(JSON.parse(saved));
   } catch {
     /* a blocked or corrupt store just means we start fresh */
   }
@@ -63,41 +125,6 @@ export function clearLocalProgress(): void {
 /** True when there is anything worth carrying into an account. */
 export function hasWork(progress: Persisted): boolean {
   return Object.keys(progress.statuses).length > 0 || progress.bookmarks.length > 0;
-}
-
-const rank: Record<ProblemStatus, number> = {
-  'not-started': 0,
-  'in-progress': 1,
-  completed: 2,
-};
-
-/**
- * Fold anonymous work into an account's progress on first sign-in.
- *
- * This deliberately never moves a problem backwards, which is right for
- * adopting unclaimed work but wrong as a general sync rule -- it would
- * resurrect a completion the user had undone. It is only used when the local
- * copy has no owner; once a device belongs to an account, the server row wins.
- */
-export function mergeProgress(account: Persisted, anonymous: Persisted): Persisted {
-  const statuses: Record<string, ProblemStatus> = { ...account.statuses };
-  for (const [slug, status] of Object.entries(anonymous.statuses)) {
-    const current = statuses[slug];
-    if (!current || rank[status] > rank[current]) statuses[slug] = status;
-  }
-
-  return {
-    ...account,
-    statuses,
-    bookmarks: [...new Set([...account.bookmarks, ...anonymous.bookmarks])],
-    streak: Math.max(account.streak, anonymous.streak),
-    lastSlug: anonymous.lastSlug ?? account.lastSlug,
-    recent: [...new Set([...anonymous.recent, ...account.recent])].slice(0, RECENT_LIMIT),
-    lastActiveDate:
-      (account.lastActiveDate ?? '') > (anonymous.lastActiveDate ?? '')
-        ? account.lastActiveDate
-        : anonymous.lastActiveDate,
-  };
 }
 
 export function todayISO(now: Date = new Date()): string {
@@ -130,26 +157,103 @@ export function noteRecent(progress: Persisted, slug: string): Persisted {
   };
 }
 
+export function setStatusAt(
+  progress: Persisted,
+  slug: string,
+  status: ProblemStatus,
+  at: number = Date.now(),
+): Persisted {
+  return {
+    ...progress,
+    statuses: { ...progress.statuses, [slug]: status },
+    lastSlug: slug,
+    updatedAt: { ...progress.updatedAt, [statusKey(slug)]: at },
+  };
+}
+
+export function toggleBookmarkAt(
+  progress: Persisted,
+  slug: string,
+  at: number = Date.now(),
+): Persisted {
+  const on = !progress.bookmarks.includes(slug);
+  return {
+    ...progress,
+    bookmarks: on ? [...progress.bookmarks, slug] : progress.bookmarks.filter((s) => s !== slug),
+    // The timestamp is kept for a removal too, so the removal itself can win a
+    // reconcile instead of the bookmark reappearing from the other side.
+    updatedAt: { ...progress.updatedAt, [bookmarkKey(slug)]: at },
+  };
+}
+
+/**
+ * Reconcile two copies of the same account's progress, field by field.
+ *
+ * Whole-object last-writer-wins loses data whenever two tabs, two devices, or
+ * an offline edit and a stale server row disagree. Comparing per-change
+ * timestamps means the newest decision for each individual problem survives,
+ * whichever side it came from -- including a deliberate un-complete or an
+ * un-bookmark, which a "furthest wins" union would resurrect.
+ */
+export function reconcile(local: Persisted, remote: Persisted): Persisted {
+  const statuses: Record<string, ProblemStatus> = {};
+  const updatedAt: ChangeClock = { ...remote.updatedAt, ...local.updatedAt };
+
+  for (const slug of new Set([...Object.keys(local.statuses), ...Object.keys(remote.statuses)])) {
+    const key = statusKey(slug);
+    const localAt = local.updatedAt[key] ?? 0;
+    const remoteAt = remote.updatedAt[key] ?? 0;
+    const winner = localAt >= remoteAt ? local : remote;
+    const status = winner.statuses[slug] ?? local.statuses[slug] ?? remote.statuses[slug];
+    if (status) statuses[slug] = status;
+    updatedAt[key] = Math.max(localAt, remoteAt);
+  }
+
+  const bookmarks: string[] = [];
+  for (const slug of new Set([...local.bookmarks, ...remote.bookmarks])) {
+    const key = bookmarkKey(slug);
+    const localAt = local.updatedAt[key] ?? 0;
+    const remoteAt = remote.updatedAt[key] ?? 0;
+    const winner = localAt >= remoteAt ? local : remote;
+    if (winner.bookmarks.includes(slug)) bookmarks.push(slug);
+    updatedAt[key] = Math.max(localAt, remoteAt);
+  }
+
+  const lastActiveDate =
+    (local.lastActiveDate ?? '') >= (remote.lastActiveDate ?? '')
+      ? local.lastActiveDate
+      : remote.lastActiveDate;
+
+  return {
+    statuses,
+    bookmarks,
+    updatedAt,
+    streak: Math.max(local.streak, remote.streak),
+    lastSlug: local.lastSlug ?? remote.lastSlug,
+    ownerId: local.ownerId ?? remote.ownerId,
+    // Recency and activity dates are not stored server-side yet, so the device
+    // copy is authoritative and must never be wiped by a hydrate. See SYNC.md.
+    recent: local.recent.length ? local.recent : remote.recent,
+    lastActiveDate,
+  };
+}
+
 /**
  * Decide what a signed-in session should start from.
  *
- * The device copy is only trusted when it demonstrably belongs to this user, or
- * when it is unclaimed work done before signing in. Anything else -- most
- * importantly a copy left behind by a different account on a shared browser --
- * is discarded rather than merged, so one person's progress can never leak into
- * another's row.
+ * A copy left behind by a different account is discarded outright, so one
+ * person's progress can never leak into another's row. Otherwise the two copies
+ * are reconciled per change, which keeps newer local edits that have not been
+ * uploaded yet -- a reload before the debounce fires, or work done offline.
  */
 export function chooseProgress(
   local: Persisted,
   remote: Persisted | null,
   userId: string,
 ): Persisted {
-  if (local.ownerId === null && hasWork(local)) {
-    const adopted = remote ? mergeProgress(remote, local) : local;
-    return { ...adopted, ownerId: userId };
-  }
-  if (local.ownerId === userId) {
-    return { ...(remote ?? local), ownerId: userId };
-  }
-  return { ...(remote ?? emptyProgress), ownerId: userId };
+  const belongsToSomeoneElse = local.ownerId !== null && local.ownerId !== userId;
+  const mine = belongsToSomeoneElse ? { ...emptyProgress } : local;
+
+  if (!remote) return { ...mine, ownerId: userId };
+  return { ...reconcile(mine, remote), ownerId: userId };
 }

@@ -7,12 +7,17 @@
  * streak's date arithmetic across month, leap-day and year boundaries.
  */
 import {
+  bookmarkKey,
   chooseProgress,
   emptyProgress,
   hasWork,
-  mergeProgress,
   noteRecent,
+  normalizeProgress,
+  reconcile,
   registerActivity,
+  setStatusAt,
+  statusKey,
+  toggleBookmarkAt,
   todayISO,
   type Persisted,
 } from './progress';
@@ -55,8 +60,8 @@ check('recent is MRU order', mru.recent, ['a', 'b']);
 check('empty progress has no work', hasWork(emptyProgress), false);
 check('a bookmark counts as work', hasWork({ ...emptyProgress, bookmarks: ['x'] }), true);
 const account = { ...emptyProgress, statuses: { x: 'in-progress' as const } };
-const anonStatuses = { ...emptyProgress, statuses: { x: 'completed' as const } };
-check('adoption takes the further status', mergeProgress(account, anonStatuses).statuses.x, 'completed');
+const anonStatuses = setStatusAt(emptyProgress, 'x', 'completed', 100);
+check('a timestamped change beats an untimestamped one', reconcile(anonStatuses, account).statuses.x, 'completed');
 
 const A = 'user-a', B = 'user-b';
 const p = (over: Partial<Persisted>): Persisted => ({ ...emptyProgress, ...over });
@@ -75,18 +80,46 @@ check('B with no row starts clean', forBNoRow.statuses, {});
 check('B with no row has no bookmarks', forBNoRow.bookmarks, []);
 
 // Anonymous work before signing in is still adopted (the feature must survive).
-const anon = p({ ownerId: null, statuses: { 'two-sum': 'completed' } });
-const adopted = chooseProgress(anon, p({ statuses: { '3sum': 'in-progress' } }), A);
-check('anonymous work is adopted', adopted.statuses, { '3sum': 'in-progress', 'two-sum': 'completed' });
+const anon = setStatusAt(p({ ownerId: null }), 'two-sum', 'completed', 100);
+const adopted = chooseProgress(anon, setStatusAt(emptyProgress, '3sum', 'in-progress', 50), A);
+check('anonymous work is adopted', adopted.statuses, { 'two-sum': 'completed', '3sum': 'in-progress' });
 
-// Returning user: the server row wins, so an undone completion stays undone.
-const staleLocal = p({ ownerId: A, statuses: { 'two-sum': 'completed' } });
-const serverSaysInProgress = p({ statuses: { 'two-sum': 'in-progress' } });
-check('undo is not resurrected', chooseProgress(staleLocal, serverSaysInProgress, A).statuses['two-sum'], 'in-progress');
+// An undo that happened after the server's copy must stick.
+const undoneLocally = setStatusAt(p({ ownerId: A }), 'two-sum', 'in-progress', 200);
+const serverSaysCompleted = setStatusAt(emptyProgress, 'two-sum', 'completed', 100);
+check('a newer undo is not resurrected', chooseProgress(undoneLocally, serverSaysCompleted, A).statuses['two-sum'], 'in-progress');
 
-// Removing a bookmark also sticks for a returning user.
-const localWithBookmark = p({ ownerId: A, bookmarks: ['3sum'] });
-check('removed bookmark stays removed', chooseProgress(localWithBookmark, p({ bookmarks: [] }), A).bookmarks, []);
+// ...and an older local copy must not clobber a newer server decision.
+const staleLocal = setStatusAt(p({ ownerId: A }), 'two-sum', 'in-progress', 100);
+const newerServer = setStatusAt(emptyProgress, 'two-sum', 'completed', 300);
+check('a stale device does not clobber the server', chooseProgress(staleLocal, newerServer, A).statuses['two-sum'], 'completed');
+
+// A removed bookmark must not come back from the other side.
+const bookmarked = toggleBookmarkAt(p({ ownerId: A }), '3sum', 100);
+const removed = toggleBookmarkAt(bookmarked, '3sum', 300);
+const serverStillHasIt = toggleBookmarkAt(emptyProgress, '3sum', 100);
+check('a newer un-bookmark sticks', chooseProgress(removed, serverStillHasIt, A).bookmarks, []);
+check('an older un-bookmark loses to a newer add', chooseProgress(bookmarked, toggleBookmarkAt(emptyProgress, '3sum', 500), A).bookmarks, ['3sum']);
+
+// Unsynced local work must survive a reload that hydrates from the server.
+const offlineEdit = setStatusAt(p({ ownerId: A, recent: ['3sum'], lastActiveDate: '2026-09-18', streak: 5 }), '3sum', 'completed', 400);
+const serverBehind = p({ statuses: {}, recent: [], lastActiveDate: null });
+const afterReload = chooseProgress(offlineEdit, serverBehind, A);
+check('unsynced local edit survives hydration', afterReload.statuses['3sum'], 'completed');
+check('local recency survives hydration', afterReload.recent, ['3sum']);
+check('local activity date survives hydration', afterReload.lastActiveDate, '2026-09-18');
+check('streak is not reset by hydration', afterReload.streak, 5);
+
+// Malformed but valid JSON must not reach the UI.
+const junk = normalizeProgress({ bookmarks: null, statuses: { a: 'bogus', b: 'completed' }, streak: -3, recent: 'nope', updatedAt: { x: 'NaN' } });
+check('null bookmarks become an array', junk.bookmarks, []);
+check('unknown status values are dropped', junk.statuses, { b: 'completed' });
+check('negative streak is rejected', junk.streak, 0);
+check('non-array recent becomes an array', junk.recent, []);
+check('non-numeric clock entries are dropped', junk.updatedAt, {});
+
+// Clock keys are namespaced so a slug cannot collide across the two kinds.
+check('status and bookmark keys differ', statusKey('x') === bookmarkKey('x'), false);
 
 // An empty anonymous device just takes the server row.
 check('empty device takes the row', chooseProgress(emptyProgress, bRow, B).statuses, { 'valid-anagram': 'in-progress' });
