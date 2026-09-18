@@ -100,7 +100,15 @@ check('every lesson gets three intuition checks', thinChecks.map((p) => p.slug),
 // Every pattern should be teachable, or the pattern map advertises a dead end.
 const uncovered = patterns.filter((pattern) => !lessons.some((p) => p.pattern === pattern));
 check('every pattern has at least one lesson', uncovered, []);
-check('lesson count', lessons.length, 31);
+check('every problem has a guided lesson', neetcode150.filter((c) => !lessons.some((l) => l.slug === c.slug)).map((c) => c.slug), []);
+check('lesson count', lessons.length, 150);
+
+// Lessons are per-problem teaching, so near-identical prose is a smell.
+const conceptBodies = lessons.map((p) => p.steps?.find((s) => s.kind === 'concept')?.body ?? '');
+const duplicateConcepts = conceptBodies.filter((b, i) => conceptBodies.indexOf(b) !== i);
+check('no two lessons share a concept body', duplicateConcepts, []);
+const shortConcepts = lessons.filter((p) => (p.steps?.find((s) => s.kind === 'concept')?.body?.length ?? 0) < 120);
+check('concept bodies are substantive', shortConcepts.map((p) => p.slug), []);
 
 // A pattern without its own teaching entry silently renders the generic
 // sliding-window-shaped visual, which is what this app is meant not to do.
