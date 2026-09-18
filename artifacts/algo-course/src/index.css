@@ -172,6 +172,8 @@ a { color: inherit; text-decoration: none; }
 .interview { padding: 0; overflow: hidden; }
 .interview-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 22px 16px; border-bottom: 1px solid var(--line); }
 .interview-head h2 { margin: 5px 0 0; font-family: 'Space Grotesk'; font-size: 20px; letter-spacing: -.03em; }
+.interview-badge { display: inline-flex; align-items: center; gap: 5px; margin-top: 7px; padding: 3px 9px; border-radius: 999px; background: var(--aqua-soft); color: var(--aqua-text); font-size: 10.5px; font-weight: 700; }
+.thinking { opacity: .7; font-style: italic; }
 .interview-log { display: flex; flex-direction: column; gap: 15px; max-height: 460px; overflow-y: auto; padding: 22px; }
 .turn { display: grid; gap: 4px; max-width: 86%; }
 .turn-who { font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }

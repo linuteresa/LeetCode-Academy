@@ -77,6 +77,8 @@ jobs:
           BASE_PATH: /${{ github.event.repository.name }}/
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          # Optional. Unset means practice mode uses the scripted interviewer.
+          VITE_INTERVIEW_ENDPOINT: ${{ secrets.VITE_INTERVIEW_ENDPOINT }}
         run: pnpm --filter @workspace/algo-course run build
 
       # Pages serves static files, so a deep link like /problems would 404.

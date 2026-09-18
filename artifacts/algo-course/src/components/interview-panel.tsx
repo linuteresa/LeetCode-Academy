@@ -1,7 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ExternalLink, RotateCcw, Send } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowRight, ExternalLink, RotateCcw, Send, Sparkles } from 'lucide-react';
 import type { Problem } from '@/data/problems';
-import { leetcodeUrl, scriptedInterviewer, type Session } from '@/lib/interview';
+import {
+  createRemoteInterviewer,
+  interviewEndpoint,
+  leetcodeUrl,
+  scriptedInterviewer,
+  type Session,
+} from '@/lib/interview';
+import { supabase } from '@/lib/supabase';
 
 /**
  * The practice conversation. The interviewer is scripted today, drawing its
@@ -10,9 +17,20 @@ import { leetcodeUrl, scriptedInterviewer, type Session } from '@/lib/interview'
  * does not change when one is added.
  */
 export function InterviewPanel({ problem }: { problem: Problem }) {
-  const interviewer = scriptedInterviewer;
+  // The hosted interviewer is used when one is configured; otherwise the
+  // scripted one, which needs no key and no network.
+  const interviewer = useMemo(() => {
+    const client = supabase;
+    if (!interviewEndpoint || !client) return scriptedInterviewer;
+    return createRemoteInterviewer(interviewEndpoint, async () => {
+      const { data } = await client.auth.getSession();
+      return data.session?.access_token ?? null;
+    });
+  }, []);
+
   const [session, setSession] = useState<Session>(() => interviewer.start(problem));
   const [draft, setDraft] = useState('');
+  const [pending, setPending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -24,16 +42,25 @@ export function InterviewPanel({ problem }: { problem: Problem }) {
     endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [session.transcript.length]);
 
+  const send = async (answer: { text?: string; choiceIndex?: number }) => {
+    setPending(true);
+    try {
+      setSession(await interviewer.reply(problem, session, answer));
+    } finally {
+      setPending(false);
+    }
+  };
+
   const sendText = () => {
     const text = draft.trim();
-    if (!text || session.awaiting !== 'text') return;
-    setSession(interviewer.reply(problem, session, { text }));
+    if (!text || session.awaiting !== 'text' || pending) return;
     setDraft('');
+    void send({ text });
   };
 
   const sendChoice = (choiceIndex: number) => {
-    if (session.awaiting !== 'choice') return;
-    setSession(interviewer.reply(problem, session, { choiceIndex }));
+    if (session.awaiting !== 'choice' || pending) return;
+    void send({ choiceIndex });
   };
 
   return (
@@ -42,6 +69,7 @@ export function InterviewPanel({ problem }: { problem: Problem }) {
         <div>
           <span className="eyebrow">Practice</span>
           <h2>Talk me through it</h2>
+          {!interviewer.scripted && <span className="interview-badge" data-testid="text-interviewer-kind"><Sparkles size={11} /> {interviewer.label}</span>}
         </div>
         <button className="btn btn-secondary" onClick={() => setSession(interviewer.start(problem))} data-testid="button-restart-interview">
           <RotateCcw size={14} /> Restart
@@ -55,6 +83,10 @@ export function InterviewPanel({ problem }: { problem: Problem }) {
             <p>{turn.text}</p>
           </div>
         ))}
+        {pending && <div className="turn turn-interviewer" data-testid="text-interview-pending">
+          <span className="turn-who">Interviewer</span>
+          <p className="thinking">Thinking…</p>
+        </div>}
         <div ref={endRef} />
       </div>
 
@@ -71,7 +103,7 @@ export function InterviewPanel({ problem }: { problem: Problem }) {
             aria-label="Your answer"
             data-testid="input-interview-answer"
           />
-          <button className="btn btn-primary" onClick={sendText} disabled={!draft.trim()} data-testid="button-send-answer">
+          <button className="btn btn-primary" onClick={sendText} disabled={!draft.trim() || pending} data-testid="button-send-answer">
             <Send size={14} /> Send
           </button>
         </div>
@@ -80,7 +112,7 @@ export function InterviewPanel({ problem }: { problem: Problem }) {
       {session.awaiting === 'choice' && (
         <div className="choice-list interview-choices">
           {session.choices.map((choice, index) => (
-            <button className="choice" onClick={() => sendChoice(index)} key={choice.label} data-testid={`button-interview-choice-${index}`}>
+            <button className="choice" onClick={() => sendChoice(index)} disabled={pending} key={choice.label} data-testid={`button-interview-choice-${index}`}>
               <span className="choice-dot" />
               {choice.label}
             </button>
@@ -100,7 +132,9 @@ export function InterviewPanel({ problem }: { problem: Problem }) {
           Solve on LeetCode <ExternalLink size={14} />
         </a>
         <span className="interview-note">
-          The interviewer follows this problem&rsquo;s own material rather than generating replies, so it can prompt and correct but cannot read free-form reasoning yet.
+          {interviewer.scripted
+            ? 'The interviewer follows this problem\u2019s own material rather than generating replies, so it can prompt and correct but cannot read free-form reasoning yet.'
+            : 'Replies are generated, so this reads what you actually write. It discusses the approach only and will not hand you the solution.'}
         </span>
       </div>
     </div>
