@@ -4,39 +4,87 @@ import { Link, Route, Router as WouterRouter, Switch, useLocation, useParams } f
 import {
   ArrowLeft, ArrowRight, BarChart3, Bookmark, BookOpen, BrainCircuit, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Code2, Compass, Flame, GitBranch,
-  ExternalLink, Grid2X2, Layers3, Lightbulb, ListFilter, Menu, Network, Play, RotateCcw, Search,
+  ExternalLink, Grid2X2, Layers3, Lightbulb, ListFilter, LogIn, LogOut, Menu, Network, Play, RefreshCw, RotateCcw, Search,
   Sparkles, Target, Timer, Trophy, X, Zap,
 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { intuitionChecksFor, patterns, problems, type IntuitionCheck, type Problem, type ProblemStatus } from '@/data/problems';
+import { useProgress, type SyncState } from '@/hooks/use-progress';
+import { authConfigured } from '@/lib/supabase';
+import type { Persisted } from '@/lib/progress';
+import type { Session } from '@supabase/supabase-js';
 
 const queryClient = new QueryClient();
-const STORAGE_KEY = 'algocourse-progress-v1';
-type Persisted = { statuses: Record<string, ProblemStatus>; bookmarks: string[]; lastSlug?: string; streak: number };
 
-function readProgress(): Persisted {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved) as Persisted;
-  } catch { /* local-only app can safely start fresh */ }
-  return { statuses: {}, bookmarks: [], streak: 4 };
+/** Two initials for the avatar, from a display name or an email address. */
+function initialsFor(session: Session): string {
+  const name = (session.user.user_metadata?.full_name as string | undefined)?.trim();
+  if (name) {
+    const parts = name.split(/\s+/);
+    return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
+  }
+  return (session.user.email ?? '?').slice(0, 2).toUpperCase();
 }
 
-function useProgress() {
-  const [progress, setProgress] = useState<Persisted>(readProgress);
-  useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(progress)), [progress]);
-  const setStatus = (slug: string, status: ProblemStatus) => setProgress((p) => ({ ...p, statuses: { ...p.statuses, [slug]: status }, lastSlug: slug }));
-  const toggleBookmark = (slug: string) => setProgress((p) => ({ ...p, bookmarks: p.bookmarks.includes(slug) ? p.bookmarks.filter((item) => item !== slug) : [...p.bookmarks, slug] }));
-  return { progress, setStatus, toggleBookmark };
+const syncLabels: Record<SyncState, string> = {
+  local: 'Saved on this device',
+  syncing: 'Saving\u2026',
+  synced: 'Progress saved to your account',
+  error: 'Could not reach your account \u2014 saved on this device',
+};
+
+/**
+ * Sign-in control in the top bar. With no Supabase project configured the app
+ * is local-only, so this falls back to the original static avatar.
+ */
+function Account({ session, authReady, syncState, signInWithGoogle, signOut }: AuthProps) {
+  const [open, setOpen] = useState(false);
+
+  if (!authConfigured) return <div className="avatar" data-testid="text-avatar">AC</div>;
+  if (!authReady) return <div className="avatar" data-testid="text-avatar" aria-busy="true">\u00b7\u00b7</div>;
+
+  if (!session) {
+    return <button className="btn btn-secondary account-signin" onClick={signInWithGoogle} data-testid="button-sign-in">
+      <LogIn size={14} /> Sign in
+    </button>;
+  }
+
+  const avatarUrl = session.user.user_metadata?.avatar_url as string | undefined;
+  return <div className="account">
+    <button className="avatar account-avatar" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-haspopup="menu" title={session.user.email ?? undefined} data-testid="button-account">
+      {avatarUrl ? <img src={avatarUrl} alt="" referrerPolicy="no-referrer" /> : initialsFor(session)}
+    </button>
+    {open && <div className="account-menu" role="menu">
+      <div className="account-identity">
+        <strong>{(session.user.user_metadata?.full_name as string | undefined) ?? 'Signed in'}</strong>
+        <small>{session.user.email}</small>
+      </div>
+      <div className={`account-sync ${syncState}`}>
+        {syncState === 'syncing' ? <RefreshCw size={12} className="spin" /> : <CheckCircle2 size={12} />}
+        {syncLabels[syncState]}
+      </div>
+      <button className="account-action" onClick={() => { setOpen(false); signOut(); }} role="menuitem" data-testid="button-sign-out">
+        <LogOut size={13} /> Sign out
+      </button>
+    </div>}
+  </div>;
 }
 
 function statusOf(problem: Problem, progress: Persisted): ProblemStatus {
   return progress.statuses[problem.slug] ?? problem.status;
 }
 
-function Shell({ children, progress }: { children: ReactNode; progress: Persisted }) {
+type AuthProps = {
+  session: Session | null;
+  authReady: boolean;
+  syncState: SyncState;
+  signInWithGoogle: () => void;
+  signOut: () => void;
+};
+
+function Shell({ children, progress, auth }: { children: ReactNode; progress: Persisted; auth: AuthProps }) {
   const [location] = useLocation();
   const isActive = (path: string) => path === '/' ? location === '/' : location.startsWith(path);
   return (
@@ -53,7 +101,7 @@ function Shell({ children, progress }: { children: ReactNode; progress: Persiste
         </nav>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="streak" data-testid="status-streak"><Flame size={14} /> {progress.streak} day streak</div>
-          <div className="avatar" data-testid="text-avatar">AC</div>
+          <Account {...auth} />
         </div>
       </header>
       {children}
@@ -290,8 +338,8 @@ function EmptyState({ title, body, action, href }: { title: string; body: string
 function NotFound() { return <main className="page"><div className="panel empty-state"><div className="empty-art"><Compass size={30} /></div><h3>This path is still being mapped.</h3><p>That page does not exist in AlgoCourse yet.</p><Link className="btn btn-primary" href="/" data-testid="link-not-found-home">Return to Today</Link></div></main>; }
 
 function Router() {
-  const { progress, setStatus, toggleBookmark } = useProgress();
-  return <Shell progress={progress}><ErrorBoundary resetKey={location.pathname}><Switch><Route path="/" component={() => <Home progress={progress} setStatus={setStatus} />} /><Route path="/problems" component={() => <Library progress={progress} toggleBookmark={toggleBookmark} />} /><Route path="/patterns" component={() => <PatternsPage progress={progress} />} /><Route path="/learn/:slug" component={() => <Lesson progress={progress} setStatus={setStatus} toggleBookmark={toggleBookmark} />} /><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
+  const { progress, setStatus, toggleBookmark, session, authReady, syncState, signInWithGoogle, signOut } = useProgress();
+  return <Shell progress={progress} auth={{ session, authReady, syncState, signInWithGoogle, signOut }}><ErrorBoundary resetKey={location.pathname}><Switch><Route path="/" component={() => <Home progress={progress} setStatus={setStatus} />} /><Route path="/problems" component={() => <Library progress={progress} toggleBookmark={toggleBookmark} />} /><Route path="/patterns" component={() => <PatternsPage progress={progress} />} /><Route path="/learn/:slug" component={() => <Lesson progress={progress} setStatus={setStatus} toggleBookmark={toggleBookmark} />} /><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
 }
 
 function App() {
